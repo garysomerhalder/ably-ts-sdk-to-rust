@@ -1,4 +1,14 @@
-// Protocol messages module - re-export from transport for now
-// This will be expanded to handle full protocol implementation
+// Protocol messages module
+// Comprehensive implementation of Ably protocol v3
 
-pub use crate::transport::{ProtocolMessage, Action};
+pub mod messages;
+pub mod encoding;
+
+// Re-export key types
+pub use messages::{
+    ProtocolMessage, Action, Message, PresenceMessage, PresenceAction,
+    ErrorInfo, AuthDetails, ConnectionDetails, flags
+};
+
+// Keep compatibility with transport module
+pub use crate::transport::{ProtocolMessage as TransportProtocolMessage, Action as TransportAction};
