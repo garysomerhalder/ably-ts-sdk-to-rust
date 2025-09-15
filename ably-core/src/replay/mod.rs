@@ -13,10 +13,19 @@ use tracing::{debug, info, warn, error};
 pub mod channel_replay;
 pub mod presence_replay;
 pub mod state_recovery;
+pub mod history_replay;
 
 pub use channel_replay::ChannelReplay;
 pub use presence_replay::PresenceReplay;
 pub use state_recovery::{StateRecovery, RecoveryState, RecoveryOptions};
+pub use history_replay::{
+    HistoryReplay, 
+    ReplayPosition, 
+    ReplayOptions as HistoryReplayOptions,
+    ReplayPaginator,
+    ChannelSerialTracker,
+    ReplayState,
+};
 
 /// Replay manager for message history-based state reconstruction
 #[derive(Debug, Clone)]

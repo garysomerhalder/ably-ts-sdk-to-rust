@@ -254,6 +254,14 @@ impl<'a> Channel<'a> {
             .await?;
         response.json().await
     }
+    
+    /// Get current channel serial for replay positioning
+    pub async fn get_channel_serial(&self) -> AblyResult<String> {
+        let status = self.status().await?;
+        status.channel_serial.ok_or_else(|| {
+            crate::error::AblyError::unexpected("Channel serial not available")
+        })
+    }
 }
 
 /// Channel options for advanced features
@@ -276,6 +284,8 @@ pub struct ChannelStatus {
     pub channel_id: String,
     pub name: Option<String>,
     pub status: Option<ChannelDetails>,
+    #[serde(rename = "channelSerial")]
+    pub channel_serial: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
