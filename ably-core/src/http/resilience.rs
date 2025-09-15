@@ -1,7 +1,7 @@
 // 🟢 GREEN Phase: Production-ready resilience features for HTTP client
 
 use crate::error::{AblyError, AblyResult};
-use crate::retry::{RetryPolicy, ExponentialBackoff};
+// use crate::retry::{RetryPolicy, ExponentialBackoff}; // TODO: Implement when needed
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -40,49 +40,49 @@ impl CircuitBreaker {
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self, f))]
     pub async fn call<F, T>(&self, f: F) -> AblyResult<T>
     where
         F: std::future::Future<Output = AblyResult<T>>,
     {
-        let state = self.state.read().await;
-        
-        match *state {
-            CircuitBreakerState::Open => {
-                // Check if we should transition to half-open
-                if let Some(last_failure) = *self.last_failure_time.read().await {
-                    if last_failure.elapsed() >= self.recovery_timeout {
-                        drop(state);
-                        let mut state = self.state.write().await;
-                        *state = CircuitBreakerState::HalfOpen;
-                        debug!("Circuit breaker transitioning to half-open");
+        {
+            let state = self.state.read().await;
+            
+            match *state {
+                CircuitBreakerState::Open => {
+                    // Check if we should transition to half-open
+                    if let Some(last_failure) = *self.last_failure_time.read().await {
+                        if last_failure.elapsed() >= self.recovery_timeout {
+                            drop(state);
+                            let mut state = self.state.write().await;
+                            *state = CircuitBreakerState::HalfOpen;
+                            debug!("Circuit breaker transitioning to half-open");
+                        } else {
+                            return Err(AblyError::CircuitBreakerOpen {
+                                message: "Circuit breaker is open".to_string(),
+                            });
+                        }
                     } else {
                         return Err(AblyError::CircuitBreakerOpen {
                             message: "Circuit breaker is open".to_string(),
                         });
                     }
-                } else {
-                    return Err(AblyError::CircuitBreakerOpen {
-                        message: "Circuit breaker is open".to_string(),
-                    });
                 }
-            }
-            CircuitBreakerState::HalfOpen => {
-                // Allow limited requests through
-                let success_count = self.success_count.load(Ordering::SeqCst);
-                if success_count >= self.half_open_requests {
-                    drop(state);
-                    let mut state = self.state.write().await;
-                    *state = CircuitBreakerState::Closed;
-                    self.failure_count.store(0, Ordering::SeqCst);
-                    self.success_count.store(0, Ordering::SeqCst);
-                    debug!("Circuit breaker closed after successful half-open period");
+                CircuitBreakerState::HalfOpen => {
+                    // Allow limited requests through
+                    let success_count = self.success_count.load(Ordering::SeqCst);
+                    if success_count >= self.half_open_requests {
+                        drop(state);
+                        let mut state = self.state.write().await;
+                        *state = CircuitBreakerState::Closed;
+                        self.failure_count.store(0, Ordering::SeqCst);
+                        self.success_count.store(0, Ordering::SeqCst);
+                        debug!("Circuit breaker closed after successful half-open period");
+                    }
                 }
+                CircuitBreakerState::Closed => {}
             }
-            CircuitBreakerState::Closed => {}
         }
-
-        drop(state);
 
         // Execute the request
         match f.await {
