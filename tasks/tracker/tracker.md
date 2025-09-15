@@ -9,7 +9,7 @@
 
 | Phase | Tasks | Status | Progress |
 |-------|-------|--------|----------|
-| 1. Foundation | 5 | 🟡 In Progress | 1/5 |
+| 1. Foundation | 5 | 🟡 In Progress | 1/5 (FOUND-001 ✅) |
 | 2. Infrastructure | 8 | 🔴 Not Started | 0/8 |
 | 3. Core | 12 | 🔴 Not Started | 0/12 |
 | 4. Features | 10 | 🔴 Not Started | 0/10 |
@@ -17,15 +17,15 @@
 
 ## 🚦 Current Sprint Tasks
 
-### Foundation (Week 1-2)
+### Foundation (Week 1-2)  
 - [x] 🟢 FOUND-001: Initialize Rust workspace [COMPLETE]
-- [ ] 🔴 FOUND-002: Set up CI/CD pipeline
-- [ ] 🔴 FOUND-003: Configure testing framework
+- [ ] 🔴 FOUND-002: Set up CI/CD pipeline [PLANNED - Task file ready]
+- [ ] 🔴 FOUND-003: Configure testing framework [PLANNED - Task file ready]  
 - [ ] 🔴 FOUND-004: Set up logging and observability
 - [ ] 🔴 FOUND-005: Create project documentation structure
 
 ### Infrastructure (Week 3-4)
-- [ ] 🔴 INFRA-001: Implement HTTP client with reqwest
+- [ ] 🔴 INFRA-001: Implement HTTP client with reqwest [PLANNED - Task file ready]
 - [ ] 🔴 INFRA-002: Add retry logic with exponential backoff
 - [ ] 🔴 INFRA-003: Implement connection pooling
 - [ ] 🔴 INFRA-004: Create error types and handling
@@ -69,10 +69,10 @@
 
 ## 📈 Progress Metrics
 - **Total Tasks**: 40
-- **Completed**: 0
+- **Completed**: 1 (FOUND-001)
 - **In Progress**: 0
-- **Blocked**: 0
-- **Completion**: 0%
+- **Blocked**: 0  
+- **Completion**: 2.5% (1/40)
 
 ## 🔗 Dependencies
 - Ably API credentials required (store in /reference/)
