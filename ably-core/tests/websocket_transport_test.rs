@@ -26,7 +26,7 @@ async fn test_websocket_connection_to_ably_realtime() {
     transport.connect().await
         .expect("Should connect to Ably realtime");
     
-    assert_eq!(transport.state(), TransportState::Connected);
+    assert_eq!(transport.state().await, TransportState::Connected);
 }
 
 #[tokio::test]
@@ -106,12 +106,12 @@ async fn test_websocket_reconnection_on_disconnect() {
     transport.disconnect().await
         .expect("Should disconnect");
     
-    assert_eq!(transport.state(), TransportState::Disconnected);
+    assert_eq!(transport.state().await, TransportState::Disconnected);
     
     // Should auto-reconnect
     tokio::time::sleep(Duration::from_secs(2)).await;
     
-    assert_eq!(transport.state(), TransportState::Connected);
+    assert_eq!(transport.state().await, TransportState::Connected);
 }
 
 #[tokio::test]
@@ -178,7 +178,7 @@ async fn test_websocket_connection_timeout() {
     let result = transport.connect().await;
     
     assert!(result.is_err());
-    assert_eq!(transport.state(), TransportState::Failed);
+    assert_eq!(transport.state().await, TransportState::Failed);
 }
 
 #[tokio::test]
@@ -198,10 +198,14 @@ async fn test_websocket_max_frame_size() {
         .expect("Should connect with frame size limit");
     
     // Try to send a large message
-    let large_data = vec![0u8; 70000]; // Larger than max frame
+    let large_data = serde_json::Value::String("x".repeat(70000)); // Larger than max frame
+    let message = ably_core::protocol::messages::Message {
+        data: Some(large_data),
+        ..Default::default()
+    };
     let msg = ProtocolMessage {
         action: Action::Message,
-        data: Some(large_data),
+        messages: Some(vec![message]),
         ..Default::default()
     };
     
@@ -231,7 +235,7 @@ async fn test_websocket_ping_pong_keepalive() {
     tokio::time::sleep(Duration::from_secs(20)).await;
     
     // Connection should still be alive
-    assert_eq!(transport.state(), TransportState::Connected);
+    assert_eq!(transport.state().await, TransportState::Connected);
 }
 
 #[tokio::test]
@@ -261,7 +265,7 @@ async fn test_websocket_graceful_shutdown() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     
     assert!(matches!(
-        transport.state(),
+        transport.state().await,
         TransportState::Closing | TransportState::Closed
     ));
 }
