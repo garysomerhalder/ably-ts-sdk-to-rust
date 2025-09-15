@@ -6,8 +6,8 @@
 pub mod auth;
 pub mod client;
 pub mod connection;
+pub mod crypto;
 pub mod delta;
-pub mod encryption;
 pub mod error;
 pub mod http;
 pub mod logging;

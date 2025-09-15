@@ -183,15 +183,31 @@ impl RestClientBuilder {
 pub struct Channel<'a> {
     name: String,
     http_client: &'a AblyHttpClient,
+    cipher: Option<crate::crypto::MessageCrypto>,
 }
 
 impl<'a> Channel<'a> {
     fn new(name: String, http_client: &'a AblyHttpClient) -> Self {
-        Self { name, http_client }
+        Self { 
+            name, 
+            http_client,
+            cipher: None,
+        }
+    }
+    
+    /// Add encryption to this channel
+    pub fn with_cipher(mut self, params: crate::crypto::CipherParams) -> Self {
+        self.cipher = Some(crate::crypto::MessageCrypto::new(params));
+        self
     }
     
     /// Publish a single message
-    pub async fn publish(&self, message: Message) -> AblyResult<()> {
+    pub async fn publish(&self, mut message: Message) -> AblyResult<()> {
+        // Encrypt message if cipher is configured
+        if let Some(ref cipher) = self.cipher {
+            cipher.encrypt_message(&mut message)?;
+        }
+        
         let path = format!("/channels/{}/messages", self.name);
         self.http_client
             .post(&path)
@@ -202,7 +218,14 @@ impl<'a> Channel<'a> {
     }
     
     /// Publish multiple messages
-    pub async fn publish_batch(&self, messages: Vec<Message>) -> AblyResult<()> {
+    pub async fn publish_batch(&self, mut messages: Vec<Message>) -> AblyResult<()> {
+        // Encrypt messages if cipher is configured
+        if let Some(ref cipher) = self.cipher {
+            for message in &mut messages {
+                cipher.encrypt_message(message)?;
+            }
+        }
+        
         let path = format!("/channels/{}/messages", self.name);
         self.http_client
             .post(&path)
@@ -214,7 +237,7 @@ impl<'a> Channel<'a> {
     
     /// Get message history
     pub fn history(&self) -> HistoryQuery<'a> {
-        HistoryQuery::new(&self.name, self.http_client)
+        HistoryQuery::new(&self.name, self.http_client, self.cipher.clone())
     }
     
     /// Get channel presence
@@ -285,14 +308,16 @@ pub struct HistoryQuery<'a> {
     channel: String,
     http_client: &'a AblyHttpClient,
     params: HashMap<String, String>,
+    cipher: Option<crate::crypto::MessageCrypto>,
 }
 
 impl<'a> HistoryQuery<'a> {
-    fn new(channel: &str, http_client: &'a AblyHttpClient) -> Self {
+    fn new(channel: &str, http_client: &'a AblyHttpClient, cipher: Option<crate::crypto::MessageCrypto>) -> Self {
         Self {
             channel: channel.to_string(),
             http_client,
             params: HashMap::new(),
+            cipher,
         }
     }
     
@@ -323,10 +348,17 @@ impl<'a> HistoryQuery<'a> {
             .query(&self.params)
             .send()
             .await?;
-        let response: Vec<Message> = response.json().await?;
+        let mut messages: Vec<Message> = response.json().await?;
+        
+        // Decrypt messages if cipher is configured
+        if let Some(ref cipher) = self.cipher {
+            for message in &mut messages {
+                cipher.decrypt_message(message)?;
+            }
+        }
         
         Ok(PaginatedResult {
-            items: response,
+            items: messages,
             http_client: self.http_client,
             next_url: None, // TODO: Parse Link header
         })
