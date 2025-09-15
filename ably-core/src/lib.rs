@@ -8,7 +8,9 @@ pub mod client;
 pub mod error;
 pub mod http;
 pub mod logging;
+pub mod protocol;
 pub mod retry;
+pub mod transport;
 
 pub fn version() -> &'static str {
     "0.1.0"
