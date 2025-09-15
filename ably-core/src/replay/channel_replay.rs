@@ -10,7 +10,6 @@ use std::collections::{HashMap, BTreeMap};
 use tracing::{debug, info, warn};
 
 /// Advanced channel replay with filtering and analysis capabilities
-#[derive(Debug)]
 pub struct ChannelReplay {
     client: RestClient,
     channel_name: String,
@@ -474,6 +473,11 @@ mod tests {
             encoding: None,
             timestamp: Some(1234567890),
             extras: None,
+            serial: None,
+            created_at: None,
+            version: None,
+            action: None,
+            operation: None,
         };
         
         let filter = MessageFilter::NamePattern("state:".to_string());
@@ -498,6 +502,11 @@ mod tests {
             encoding: None,
             timestamp: Some(1234567890),
             extras: None,
+            serial: None,
+            created_at: None,
+            version: None,
+            action: None,
+            operation: None,
         };
         
         let filter = MessageFilter::ClientId("sensor1".to_string());
@@ -522,6 +531,11 @@ mod tests {
             encoding: None,
             timestamp: Some(1234567890),
             extras: None,
+            serial: None,
+            created_at: None,
+            version: None,
+            action: None,
+            operation: None,
         };
         
         let filter = MessageFilter::TimeRange {

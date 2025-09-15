@@ -4,13 +4,12 @@
 use super::{ReplayOptions, ReplayResult};
 use crate::client::rest::RestClient;
 use crate::error::{AblyError, AblyResult};
-use crate::protocol::messages::PresenceMessage;
+use crate::protocol::messages::{PresenceMessage, PresenceAction};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, BTreeMap};
 use tracing::{debug, info, warn};
 
 /// Presence replay with advanced analysis capabilities
-#[derive(Debug)]
 pub struct PresenceReplay {
     client: RestClient,
     channel_name: String,
@@ -261,8 +260,8 @@ impl PresenceReplay {
             if let Some(client_id) = &message.client_id {
                 let timestamp = message.timestamp.unwrap_or(0);
                 
-                match message.action.as_deref() {
-                    Some("enter") => {
+                match &message.action {
+                    Some(PresenceAction::Enter) => {
                         // Start new session
                         let session = PresenceSession {
                             client_id: client_id.clone(),
@@ -290,7 +289,7 @@ impl PresenceReplay {
                         analysis.current_presence.insert(client_id.clone(), message.clone());
                     }
                     
-                    Some("update") => {
+                    Some(PresenceAction::Update) => {
                         if let Some(session) = active_sessions.get_mut(client_id) {
                             // Add data change to current session
                             let data_change = DataChange {
@@ -306,7 +305,7 @@ impl PresenceReplay {
                         analysis.current_presence.insert(client_id.clone(), message.clone());
                     }
                     
-                    Some("leave") => {
+                    Some(PresenceAction::Leave) => {
                         if let Some(mut session) = active_sessions.remove(client_id) {
                             // Complete the session
                             session.leave_time = Some(timestamp);
@@ -433,8 +432,8 @@ impl PresenceReplay {
                 // Check for rapid cycling
                 let mut enter_leave_cycles = 0;
                 for window in events.windows(2) {
-                    if window[0].action.as_deref() == Some("enter") && 
-                       window[1].action.as_deref() == Some("leave") {
+                    if window[0].action == Some(PresenceAction::Enter) && 
+                       window[1].action == Some(PresenceAction::Leave) {
                         let time_diff = window[1].timestamp.unwrap_or(0) - window[0].timestamp.unwrap_or(0);
                         if time_diff < 5000 { // Less than 5 seconds
                             enter_leave_cycles += 1;
@@ -459,8 +458,8 @@ impl PresenceReplay {
     
     /// Analyze peak concurrent user metrics
     fn analyze_peak_metrics(&self, messages: &[PresenceMessage], analysis: &mut PresenceAnalysis) {
-        let mut concurrent_count = 0;
-        let mut max_concurrent = 0;
+        let mut concurrent_count: usize = 0;
+        let mut max_concurrent: usize = 0;
         let mut peak_timestamp = 0i64;
         let mut timeline = Vec::new();
         let mut total_concurrent = 0u64;
@@ -469,15 +468,15 @@ impl PresenceReplay {
         for message in messages {
             let timestamp = message.timestamp.unwrap_or(0);
             
-            match message.action.as_deref() {
-                Some("enter") => {
+            match &message.action {
+                Some(PresenceAction::Enter) => {
                     concurrent_count += 1;
                     if concurrent_count > max_concurrent {
                         max_concurrent = concurrent_count;
                         peak_timestamp = timestamp;
                     }
                 }
-                Some("leave") => {
+                Some(PresenceAction::Leave) => {
                     concurrent_count = concurrent_count.saturating_sub(1);
                 }
                 _ => {}

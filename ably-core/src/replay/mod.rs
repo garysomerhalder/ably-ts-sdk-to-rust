@@ -4,7 +4,7 @@
 
 use crate::client::rest::RestClient;
 use crate::error::{AblyError, AblyResult};
-use crate::protocol::messages::{Message, PresenceMessage};
+use crate::protocol::messages::{Message, PresenceMessage, PresenceAction};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, BTreeMap};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -28,7 +28,6 @@ pub use history_replay::{
 };
 
 /// Replay manager for message history-based state reconstruction
-#[derive(Debug, Clone)]
 pub struct ReplayManager {
     client: RestClient,
     options: ReplayOptions,
@@ -242,12 +241,12 @@ impl ReplayManager {
         presence_state: &mut HashMap<String, PresenceMessage>,
     ) -> AblyResult<()> {
         if let Some(client_id) = &presence.client_id {
-            match presence.action.as_deref() {
-                Some("enter") | Some("update") => {
+            match &presence.action {
+                Some(PresenceAction::Enter) | Some(PresenceAction::Update) => {
                     debug!("Client {} entered/updated presence", client_id);
                     presence_state.insert(client_id.clone(), presence.clone());
                 }
-                Some("leave") => {
+                Some(PresenceAction::Leave) => {
                     debug!("Client {} left presence", client_id);
                     presence_state.remove(client_id);
                 }

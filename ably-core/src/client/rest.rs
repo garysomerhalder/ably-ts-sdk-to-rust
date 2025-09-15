@@ -45,6 +45,11 @@ impl RestClient {
         RestClientBuilder::default()
     }
     
+    /// Get reference to the HTTP client
+    pub fn http_client(&self) -> &AblyHttpClient {
+        &self.http_client
+    }
+    
     /// Get server time
     pub async fn time(&self) -> AblyResult<i64> {
         let response = self.http_client
@@ -427,6 +432,16 @@ impl<'a> PresenceHistoryQuery<'a> {
     
     pub fn limit(mut self, limit: u32) -> Self {
         self.params.insert("limit".to_string(), limit.to_string());
+        self
+    }
+    
+    pub fn start(mut self, start: i64) -> Self {
+        self.params.insert("start".to_string(), start.to_string());
+        self
+    }
+    
+    pub fn end(mut self, end: i64) -> Self {
+        self.params.insert("end".to_string(), end.to_string());
         self
     }
     

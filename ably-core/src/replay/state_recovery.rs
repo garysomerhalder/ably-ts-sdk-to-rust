@@ -10,7 +10,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn, error};
 
 /// Complete state recovery system with checkpointing and rollback
-#[derive(Debug)]
 pub struct StateRecovery {
     replay_manager: ReplayManager,
     recovery_options: RecoveryOptions,
@@ -218,10 +217,13 @@ impl StateRecovery {
         
         // Create checkpoint metadata
         let creation_time = start_time.elapsed().unwrap().as_millis() as u64;
+        let quality_score = self.calculate_checkpoint_quality(&snapshot);
+        let size_bytes = snapshot_json.len();
+        
         let metadata = CheckpointMetadata {
             reason,
-            quality_score: self.calculate_checkpoint_quality(&snapshot),
-            size_bytes: snapshot_json.len(),
+            quality_score,
+            size_bytes,
             creation_time_ms: creation_time,
             tags: vec!["auto".to_string()],
         };
@@ -242,7 +244,7 @@ impl StateRecovery {
         self.cleanup_old_checkpoints();
         
         info!("Checkpoint created: {} (quality: {}, size: {} bytes)",
-              checkpoint_id, metadata.quality_score, metadata.size_bytes);
+              checkpoint_id, quality_score, size_bytes);
         
         Ok(checkpoint_id)
     }
@@ -552,11 +554,10 @@ impl StateRecovery {
                 .max_by_key(|cp| cp.timestamp);
             
             if let Some(latest) = latest_checkpoint {
+                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                let age_seconds = now as i64 - (latest.timestamp / 1000);
                 metrics.insert("latest_checkpoint_age_seconds".to_string(),
-                              serde_json::json!({
-                                  let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-                                  now as i64 - (latest.timestamp / 1000)
-                              }));
+                              serde_json::json!(age_seconds));
             }
         }
         
