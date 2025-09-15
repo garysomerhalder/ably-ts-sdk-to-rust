@@ -1,7 +1,7 @@
 // 🔴 RED Phase: HTTP client tests that MUST fail initially
 // Testing real Ably REST API endpoints - NO MOCKS!
 
-use ably_core::http::{AblyHttpClient, HttpConfig, HttpMethod};
+use ably_core::http::{AblyHttpClient, HttpConfig, HttpMethod, HttpResponse};
 use ably_core::auth::AuthMode;
 use serde_json::json;
 use std::time::Duration;

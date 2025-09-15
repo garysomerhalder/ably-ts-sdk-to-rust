@@ -47,12 +47,13 @@ impl RestClient {
     
     /// Get server time
     pub async fn time(&self) -> AblyResult<i64> {
-        let response: Vec<i64> = self.http_client
+        let response = self.http_client
             .get("/time")
             .send()
             .await?;
         
-        response.first().copied()
+        let times: Vec<i64> = response.json().await?;
+        times.first().copied()
             .ok_or_else(|| AblyError::unexpected("Empty time response"))
     }
     
@@ -195,7 +196,7 @@ impl<'a> Channel<'a> {
         self.http_client
             .post(&path)
             .json(&message)
-            .send::<Value>()
+            .send()
             .await?;
         Ok(())
     }
@@ -206,7 +207,7 @@ impl<'a> Channel<'a> {
         self.http_client
             .post(&path)
             .json(&messages)
-            .send::<Value>()
+            .send()
             .await?;
         Ok(())
     }
@@ -224,10 +225,11 @@ impl<'a> Channel<'a> {
     /// Get channel status
     pub async fn status(&self) -> AblyResult<ChannelStatus> {
         let path = format!("/channels/{}", self.name);
-        self.http_client
+        let response = self.http_client
             .get(&path)
             .send()
-            .await
+            .await?;
+        response.json().await
     }
 }
 
@@ -316,11 +318,12 @@ impl<'a> HistoryQuery<'a> {
     
     pub async fn execute(&self) -> AblyResult<PaginatedResult<'a, Message>> {
         let path = format!("/channels/{}/messages", self.channel);
-        let response: Vec<Message> = self.http_client
+        let response = self.http_client
             .get(&path)
             .query(&self.params)
             .send()
             .await?;
+        let response: Vec<Message> = response.json().await?;
         
         Ok(PaginatedResult {
             items: response,
@@ -346,10 +349,11 @@ impl<'a> PresenceOperations<'a> {
     
     pub async fn get(&self) -> AblyResult<PaginatedResult<'a, PresenceMessage>> {
         let path = format!("/channels/{}/presence", self.channel);
-        let response: Vec<PresenceMessage> = self.http_client
+        let response = self.http_client
             .get(&path)
             .send()
             .await?;
+        let response: Vec<PresenceMessage> = response.json().await?;
         
         Ok(PaginatedResult {
             items: response,
@@ -386,11 +390,12 @@ impl<'a> PresenceHistoryQuery<'a> {
     
     pub async fn execute(&self) -> AblyResult<PaginatedResult<'a, PresenceMessage>> {
         let path = format!("/channels/{}/presence/history", self.channel);
-        let response: Vec<PresenceMessage> = self.http_client
+        let response = self.http_client
             .get(&path)
             .query(&self.params)
             .send()
             .await?;
+        let response: Vec<PresenceMessage> = response.json().await?;
         
         Ok(PaginatedResult {
             items: response,
@@ -425,11 +430,12 @@ impl<'a> StatsQuery<'a> {
     }
     
     pub async fn execute(&self) -> AblyResult<PaginatedResult<'a, Stats>> {
-        let response: Vec<Stats> = self.http_client
+        let response = self.http_client
             .get("/stats")
             .query(&self.params)
             .send()
             .await?;
+        let response: Vec<Stats> = response.json().await?;
         
         Ok(PaginatedResult {
             items: response,
@@ -508,11 +514,12 @@ impl<'a> ChannelListQuery<'a> {
     }
     
     pub async fn execute(&self) -> AblyResult<Vec<ChannelStatus>> {
-        self.http_client
+        let response = self.http_client
             .get("/channels")
             .query(&self.params)
             .send()
-            .await
+            .await?;
+        response.json().await
     }
 }
 
@@ -558,11 +565,12 @@ impl<'a> TokenRequestBuilder<'a> {
     }
     
     pub async fn execute(&self) -> AblyResult<TokenDetails> {
-        self.http_client
+        let response = self.http_client
             .post("/keys/token")
             .json(&self.params)
             .send()
-            .await
+            .await?;
+        response.json().await
     }
 }
 
@@ -610,7 +618,7 @@ impl<'a> PushPublishBuilder<'a> {
         self.http_client
             .post("/push/publish")
             .json(&self.payload)
-            .send::<Value>()
+            .send()
             .await?;
         Ok(())
     }
@@ -653,11 +661,12 @@ impl<'a> BatchRequest<'a> {
             "requests": self.requests
         });
         
-        self.http_client
+        let response = self.http_client
             .post("/batch")
             .json(&payload)
             .send()
-            .await
+            .await?;
+        response.json().await
     }
 }
 
@@ -716,10 +725,11 @@ impl<'a, T: for<'de> Deserialize<'de>> PaginationQuery<'a, T> {
     }
     
     pub async fn execute(&self) -> AblyResult<PaginatedResult<'a, T>> {
-        let response: Vec<T> = self.http_client
+        let response = self.http_client
             .get(&self.url)
             .send()
             .await?;
+        let response: Vec<T> = response.json().await?;
         
         Ok(PaginatedResult {
             items: response,

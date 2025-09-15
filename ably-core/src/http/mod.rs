@@ -180,8 +180,8 @@ impl<'a> HttpRequestBuilder<'a> {
         self
     }
 
-    /// Send the request and get response
-    pub async fn send<T: DeserializeOwned>(self) -> AblyResult<T> {
+    /// Send the request and parse response as JSON
+    pub async fn send_json<T: DeserializeOwned>(self) -> AblyResult<T> {
         let mut request = match self.method {
             HttpMethod::Get => self.client.client.get(&self.url),
             HttpMethod::Post => self.client.client.post(&self.url),
@@ -229,6 +229,48 @@ impl<'a> HttpRequestBuilder<'a> {
         response.json::<T>().await.map_err(|e| {
             AblyError::decode(format!("Failed to parse response: {}", e))
         })
+    }
+
+    /// Send the request and get raw response
+    pub async fn send(self) -> AblyResult<HttpResponse> {
+        let mut request = match self.method {
+            HttpMethod::Get => self.client.client.get(&self.url),
+            HttpMethod::Post => self.client.client.post(&self.url),
+            HttpMethod::Put => self.client.client.put(&self.url),
+            HttpMethod::Delete => self.client.client.delete(&self.url),
+            HttpMethod::Patch => self.client.client.patch(&self.url),
+        };
+
+        // Apply authentication
+        request = self.client.apply_auth(request);
+
+        // Add headers
+        for (key, value) in self.headers {
+            request = request.header(&key, &value);
+        }
+
+        // Add query parameters
+        if !self.query_params.is_empty() {
+            request = request.query(&self.query_params);
+        }
+
+        // Add body if present
+        if let Some(body) = self.body {
+            request = request.body(body);
+        }
+
+        // Send request
+        let response = request.send().await.map_err(|e| {
+            if e.is_timeout() {
+                AblyError::timeout(format!("Request timeout: {}", e))
+            } else if e.is_connect() {
+                AblyError::connection_failed(format!("Connection failed: {}", e))
+            } else {
+                AblyError::network(format!("Network error: {}", e))
+            }
+        })?;
+
+        Ok(HttpResponse { inner: response })
     }
 }
 
