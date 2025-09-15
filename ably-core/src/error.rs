@@ -48,6 +48,13 @@ pub enum AblyError {
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
     
+    #[error("Encryption error: {message}")]
+    Encryption {
+        message: String,
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+    
     #[error("Circuit breaker open: {message}")]
     CircuitBreakerOpen {
         message: String,
@@ -118,6 +125,37 @@ impl AblyError {
         }
     }
     
+    /// Create an encoding error
+    pub fn encoding(message: impl Into<String>) -> Self {
+        Self::Decode {
+            message: message.into(),
+            source: None,
+        }
+    }
+    
+    /// Create a decoding error
+    pub fn decoding(message: impl Into<String>) -> Self {
+        Self::Decode {
+            message: message.into(),
+            source: None,
+        }
+    }
+    
+    /// Create an encryption error
+    pub fn encryption(message: impl Into<String>) -> Self {
+        Self::Encryption {
+            message: message.into(),
+            source: None,
+        }
+    }
+    
+    /// Create an invalid request error
+    pub fn invalid_request(message: impl Into<String>) -> Self {
+        Self::BadRequest {
+            message: message.into(),
+        }
+    }
+    
     /// Create an API error
     pub fn api(code: u16, message: impl Into<String>) -> Self {
         Self::Api {
@@ -185,6 +223,7 @@ impl AblyError {
             AblyError::RateLimited { message, .. } |
             AblyError::Api { message, .. } |
             AblyError::Decode { message, .. } |
+            AblyError::Encryption { message, .. } |
             AblyError::CircuitBreakerOpen { message } |
             AblyError::Forbidden { message } |
             AblyError::NotFound { message } |
