@@ -1,8 +1,14 @@
-// 🟡 YELLOW Phase: Minimal error handling implementation
-// Just enough to make tests pass with real Ably integration
+// 🟢 GREEN Phase: Production-ready error handling system
+// Complete error handling with Ably protocol compatibility
+
+pub mod advanced;
+pub mod ably_codes;
 
 use thiserror::Error;
 use std::time::Duration;
+
+pub use advanced::{ErrorMetrics, AdvancedRetryPolicy, ErrorRecovery, ErrorAggregator};
+pub use ably_codes::{AblyErrorCode, parse_ably_error};
 
 #[derive(Debug, Error)]
 pub enum AblyError {
@@ -193,7 +199,7 @@ impl ErrorCode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ErrorCategory {
     Network,
     Auth,
