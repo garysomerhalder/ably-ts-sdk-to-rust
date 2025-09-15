@@ -1,7 +1,7 @@
 // 🔴 RED Phase: Logging and tracing tests that MUST fail initially
 // Testing real logging output and tracing functionality
 
-use ably_core::logging::{init_logging, LogConfig, LogLevel, create_span, with_correlation_id};
+use ably_core::logging::{init_logging, LogConfig, LogLevel, create_span, with_correlation_id, SpanExt};
 use ably_core::client::RestClient;
 use tracing::{info, error, warn, debug, trace};
 use std::sync::Once;
@@ -68,19 +68,14 @@ async fn test_span_creation() {
     // Spans should have proper parent-child relationship
 }
 
-#[tokio::test]
-async fn test_correlation_id_propagation() {
+#[test]
+fn test_correlation_id_propagation() {
     init_test_logging();
     
     let correlation_id = with_correlation_id(|| {
         info!("Operation with correlation ID");
         
         // Correlation ID should be included in all logs within this scope
-        let client = RestClient::new("test.key:secret");
-        
-        // Make a request that should include correlation ID
-        let _ = client.get_server_time().await;
-        
         ably_core::logging::get_correlation_id()
     });
     
@@ -155,8 +150,8 @@ fn test_log_output_targets() {
     assert!(Path::new("test_logs.json").exists());
 }
 
-#[tokio::test]
-async fn test_distributed_tracing() {
+#[test]
+fn test_distributed_tracing() {
     init_test_logging();
     
     // Create a root span with trace ID

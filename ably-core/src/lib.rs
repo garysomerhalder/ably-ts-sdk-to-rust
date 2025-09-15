@@ -6,6 +6,7 @@
 pub mod error;
 pub mod client;
 pub mod retry;
+pub mod logging;
 
 pub fn version() -> &'static str {
     "0.1.0"
