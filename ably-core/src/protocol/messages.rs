@@ -116,6 +116,22 @@ pub struct Message {
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<i64>,
+    
+    // Additional fields from wire format
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<i64>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<i64>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<Value>,
 }
 
 /// Presence message structure

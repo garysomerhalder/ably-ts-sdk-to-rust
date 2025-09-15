@@ -232,6 +232,11 @@ impl DeltaProcessor {
             connection_id: message.connection_id.clone(),
             connection_key: message.connection_key.clone(),
             extras: message.extras.clone(),
+            serial: message.serial.clone(),
+            created_at: message.created_at,
+            version: message.version.clone(),
+            action: message.action,
+            operation: message.operation.clone(),
         };
         
         Ok(decoded_message)
