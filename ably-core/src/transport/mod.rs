@@ -14,8 +14,10 @@ use serde_repr::{Serialize_repr, Deserialize_repr};
 use tracing::{debug, info, warn, error};
 
 pub use self::config::TransportConfig;
+pub use self::resilience::{ReconnectManager, HeartbeatManager, MessageQueue, ConnectionStats};
 
 mod config;
+mod resilience;
 
 /// Transport state
 #[derive(Debug, Clone, Copy, PartialEq)]
