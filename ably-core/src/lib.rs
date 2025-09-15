@@ -11,6 +11,7 @@ pub mod delta;
 pub mod error;
 pub mod http;
 pub mod logging;
+pub mod plugin;
 pub mod protocol;
 pub mod push;
 pub mod replay;
