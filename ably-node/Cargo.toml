@@ -5,5 +5,16 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
 ably-core = { path = "../ably-core" }
+napi = { version = "2", features = ["async", "tokio_rt"] }
+napi-derive = "2"
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[build-dependencies]
+napi-build = "2"
