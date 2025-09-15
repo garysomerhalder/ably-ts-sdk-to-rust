@@ -9,8 +9,10 @@ use serde::Serialize;
 use std::time::Duration;
 
 pub use self::config::HttpConfig;
+pub use self::resilience::{CircuitBreaker, RateLimiter, ConnectionMetrics};
 
 mod config;
+mod resilience;
 
 /// HTTP methods supported by Ably REST API
 #[derive(Debug, Clone, Copy)]
