@@ -1,5 +1,7 @@
-// 🟡 YELLOW Phase: Minimal test framework implementation
-// This provides just enough functionality to make tests pass
+// 🟢 GREEN Phase: Production-ready test framework
+// Full Integration-First testing infrastructure with advanced features
+
+pub mod test_harness;
 
 use std::env;
 use std::sync::atomic::{AtomicU64, Ordering};
