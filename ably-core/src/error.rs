@@ -10,6 +10,9 @@ use std::time::Duration;
 pub use advanced::{ErrorMetrics, AdvancedRetryPolicy, ErrorRecovery, ErrorAggregator};
 pub use ably_codes::{AblyErrorCode, parse_ably_error};
 
+/// Type alias for Ably results
+pub type AblyResult<T> = Result<T, AblyError>;
+
 #[derive(Debug, Error)]
 pub enum AblyError {
     #[error("Network error: {message}")]
@@ -72,6 +75,41 @@ pub enum AblyError {
 }
 
 impl AblyError {
+    /// Create a timeout error
+    pub fn timeout(message: impl Into<String>) -> Self {
+        Self::Network {
+            message: message.into(),
+            source: None,
+            retryable: true,
+        }
+    }
+    
+    /// Create a connection failed error
+    pub fn connection_failed(message: impl Into<String>) -> Self {
+        Self::Network {
+            message: message.into(),
+            source: None,
+            retryable: true,
+        }
+    }
+    
+    /// Create a network error
+    pub fn network(message: impl Into<String>) -> Self {
+        Self::Network {
+            message: message.into(),
+            source: None,
+            retryable: true,
+        }
+    }
+    
+    /// Create a parse error
+    pub fn parse(message: impl Into<String>) -> Self {
+        Self::Decode {
+            message: message.into(),
+            source: None,
+        }
+    }
+    
     pub fn code(&self) -> Option<ErrorCode> {
         match self {
             AblyError::Authentication { code, .. } => code.clone(),
@@ -97,6 +135,13 @@ impl AblyError {
             AblyError::BadRequest { .. } => ErrorCategory::BadRequest,
             AblyError::Api { code, .. } => ErrorCategory::from_code(*code),
             _ => ErrorCategory::Unknown,
+        }
+    }
+    
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            AblyError::Network { message, .. } => message.contains("timeout") || message.contains("Timeout"),
+            _ => false,
         }
     }
     
