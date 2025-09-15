@@ -29,6 +29,7 @@ pub struct AblyHttpClient {
     client: Client,
     auth_mode: Option<AuthMode>,
     base_url: String,
+    default_headers: Vec<(String, String)>,
 }
 
 impl AblyHttpClient {
@@ -45,7 +46,8 @@ impl AblyHttpClient {
         Self {
             client,
             auth_mode: None,
-            base_url: "https://rest.ably.io".to_string(),
+            base_url: config.base_url.clone(),
+            default_headers: Vec::new(),
         }
     }
 
@@ -56,29 +58,59 @@ impl AblyHttpClient {
         client
     }
 
+    /// Add a default header that will be included in all requests
+    pub fn add_default_header(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.default_headers.push((key.into(), value.into()));
+    }
+
     /// Create a GET request builder
     pub fn get(&self, url: &str) -> HttpRequestBuilder {
-        HttpRequestBuilder::new(self, HttpMethod::Get, url)
+        let full_url = if url.starts_with("http") {
+            url.to_string()
+        } else {
+            format!("{}{}", self.base_url, url)
+        };
+        HttpRequestBuilder::new(self, HttpMethod::Get, &full_url)
     }
 
     /// Create a POST request builder
     pub fn post(&self, url: &str) -> HttpRequestBuilder {
-        HttpRequestBuilder::new(self, HttpMethod::Post, url)
+        let full_url = if url.starts_with("http") {
+            url.to_string()
+        } else {
+            format!("{}{}", self.base_url, url)
+        };
+        HttpRequestBuilder::new(self, HttpMethod::Post, &full_url)
     }
 
     /// Create a PUT request builder
     pub fn put(&self, url: &str) -> HttpRequestBuilder {
-        HttpRequestBuilder::new(self, HttpMethod::Put, url)
+        let full_url = if url.starts_with("http") {
+            url.to_string()
+        } else {
+            format!("{}{}", self.base_url, url)
+        };
+        HttpRequestBuilder::new(self, HttpMethod::Put, &full_url)
     }
 
     /// Create a DELETE request builder
     pub fn delete(&self, url: &str) -> HttpRequestBuilder {
-        HttpRequestBuilder::new(self, HttpMethod::Delete, url)
+        let full_url = if url.starts_with("http") {
+            url.to_string()
+        } else {
+            format!("{}{}", self.base_url, url)
+        };
+        HttpRequestBuilder::new(self, HttpMethod::Delete, &full_url)
     }
 
     /// Create a PATCH request builder
     pub fn patch(&self, url: &str) -> HttpRequestBuilder {
-        HttpRequestBuilder::new(self, HttpMethod::Patch, url)
+        let full_url = if url.starts_with("http") {
+            url.to_string()
+        } else {
+            format!("{}{}", self.base_url, url)
+        };
+        HttpRequestBuilder::new(self, HttpMethod::Patch, &full_url)
     }
 
     /// Apply authentication to request
@@ -110,11 +142,12 @@ pub struct HttpRequestBuilder<'a> {
 
 impl<'a> HttpRequestBuilder<'a> {
     fn new(client: &'a AblyHttpClient, method: HttpMethod, url: &str) -> Self {
+        let headers = client.default_headers.clone();
         Self {
             client,
             method,
             url: url.to_string(),
-            headers: Vec::new(),
+            headers,
             query_params: Vec::new(),
             body: None,
         }
@@ -148,7 +181,7 @@ impl<'a> HttpRequestBuilder<'a> {
     }
 
     /// Send the request and get response
-    pub async fn send(self) -> AblyResult<HttpResponse> {
+    pub async fn send<T: DeserializeOwned>(self) -> AblyResult<T> {
         let mut request = match self.method {
             HttpMethod::Get => self.client.client.get(&self.url),
             HttpMethod::Post => self.client.client.post(&self.url),
@@ -186,7 +219,16 @@ impl<'a> HttpRequestBuilder<'a> {
             }
         })?;
 
-        Ok(HttpResponse { inner: response })
+        // Parse response
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(AblyError::api(status.as_u16(), error_text));
+        }
+
+        response.json::<T>().await.map_err(|e| {
+            AblyError::decode(format!("Failed to parse response: {}", e))
+        })
     }
 }
 

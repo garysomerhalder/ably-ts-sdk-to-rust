@@ -110,6 +110,29 @@ impl AblyError {
         }
     }
     
+    /// Create a decode error
+    pub fn decode(message: impl Into<String>) -> Self {
+        Self::Decode {
+            message: message.into(),
+            source: None,
+        }
+    }
+    
+    /// Create an API error
+    pub fn api(code: u16, message: impl Into<String>) -> Self {
+        Self::Api {
+            code,
+            message: message.into(),
+        }
+    }
+    
+    /// Create an unexpected error
+    pub fn unexpected(message: impl Into<String>) -> Self {
+        Self::Internal {
+            message: message.into(),
+        }
+    }
+    
     pub fn code(&self) -> Option<ErrorCode> {
         match self {
             AblyError::Authentication { code, .. } => code.clone(),

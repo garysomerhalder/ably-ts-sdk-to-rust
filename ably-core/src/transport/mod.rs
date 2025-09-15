@@ -3,12 +3,12 @@
 
 use crate::auth::AuthMode;
 use crate::error::{AblyError, AblyResult};
+use crate::protocol::messages::{ProtocolMessage, Action};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, WebSocketStream, MaybeTlsStream};
 use tokio::net::TcpStream;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
-use std::time::Duration;
 use serde::{Serialize, Deserialize};
 use serde_repr::{Serialize_repr, Deserialize_repr};
 use tracing::{debug, info, warn, error};
@@ -233,79 +233,5 @@ impl WebSocketTransport {
                 }
             }
         });
-    }
-}
-
-/// Protocol message
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProtocolMessage {
-    pub action: Action,
-    
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub channel: Option<String>,
-    
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub messages: Option<Vec<serde_json::Value>>,
-    
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub connection_id: Option<String>,
-    
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<Vec<u8>>,
-}
-
-impl Default for ProtocolMessage {
-    fn default() -> Self {
-        Self {
-            action: Action::Heartbeat,
-            channel: None,
-            messages: None,
-            connection_id: None,
-            data: None,
-        }
-    }
-}
-
-impl ProtocolMessage {
-    /// Create a heartbeat message
-    pub fn heartbeat() -> Self {
-        Self {
-            action: Action::Heartbeat,
-            ..Default::default()
-        }
-    }
-}
-
-/// Protocol action types
-#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr, Deserialize_repr)]
-#[repr(u8)]
-pub enum Action {
-    Heartbeat = 0,
-    Ack = 1,
-    Nack = 2,
-    Connect = 3,
-    Connected = 4,
-    Disconnect = 5,
-    Disconnected = 6,
-    Close = 7,
-    Closed = 8,
-    Error = 9,
-    Attach = 10,
-    Attached = 11,
-    Detach = 12,
-    Detached = 13,
-    Presence = 14,
-    Message = 15,
-    Sync = 16,
-    Auth = 17,
-    Activate = 18,
-    Object = 19,
-    ObjectSync = 20,
-    Annotation = 21,
-}
-
-impl Default for Action {
-    fn default() -> Self {
-        Action::Heartbeat
     }
 }

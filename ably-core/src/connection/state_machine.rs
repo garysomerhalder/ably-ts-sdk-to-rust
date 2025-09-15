@@ -170,14 +170,14 @@ impl ConnectionStateMachine {
         
         // Handle event-specific updates
         match event {
-            ConnectionEvent::Connected(id) => {
+            ConnectionEvent::Connected(ref id) => {
                 let mut conn_id = self.connection_id.write().await;
-                *conn_id = Some(id);
+                *conn_id = Some(id.clone());
                 
                 let mut retry = self.retry_count.write().await;
                 *retry = 0;
             }
-            ConnectionEvent::Error(e) | ConnectionEvent::Disconnected(Some(e)) => {
+            ConnectionEvent::Error(ref e) | ConnectionEvent::Disconnected(Some(ref e)) => {
                 let mut error = self.error_info.write().await;
                 *error = Some(e.clone());
             }
@@ -200,7 +200,7 @@ impl ConnectionStateMachine {
             event: format!("{:?}", event),
             timestamp: Instant::now(),
             error: match event {
-                ConnectionEvent::Error(e) | ConnectionEvent::Disconnected(Some(e)) => Some(e),
+                ConnectionEvent::Error(ref e) | ConnectionEvent::Disconnected(Some(ref e)) => Some(e.clone()),
                 _ => None,
             },
         });

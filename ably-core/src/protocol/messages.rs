@@ -87,7 +87,7 @@ pub enum Action {
 }
 
 /// Message structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,13 +119,14 @@ pub struct Message {
 }
 
 /// Presence message structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PresenceMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     
-    pub action: PresenceAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<PresenceAction>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
@@ -144,9 +145,10 @@ pub struct PresenceMessage {
 }
 
 /// Presence action types
-#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr, Deserialize_repr, Default)]
 #[repr(u8)]
 pub enum PresenceAction {
+    #[default]
     Absent = 0,
     Present = 1,
     Enter = 2,
@@ -155,9 +157,10 @@ pub enum PresenceAction {
 }
 
 /// Error information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ErrorInfo {
+    #[serde(default)]
     pub code: u16,
     
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -349,3 +352,55 @@ impl Default for ConnectionDetails {
         }
     }
 }
+
+/// Message builder for convenient message creation
+pub struct MessageBuilder {
+    message: Message,
+}
+
+impl Message {
+    pub fn builder() -> MessageBuilder {
+        MessageBuilder {
+            message: Message::default(),
+        }
+    }
+}
+
+impl MessageBuilder {
+    pub fn id(mut self, id: impl Into<String>) -> Self {
+        self.message.id = Some(id.into());
+        self
+    }
+    
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.message.name = Some(name.into());
+        self
+    }
+    
+    pub fn data(mut self, data: impl Into<String>) -> Self {
+        self.message.data = Some(Value::String(data.into()));
+        self
+    }
+    
+    pub fn json_data(mut self, data: Value) -> Self {
+        self.message.data = Some(data);
+        self
+    }
+    
+    pub fn client_id(mut self, id: impl Into<String>) -> Self {
+        self.message.client_id = Some(id.into());
+        self
+    }
+    
+    pub fn connection_id(mut self, id: impl Into<String>) -> Self {
+        self.message.connection_id = Some(id.into());
+        self
+    }
+    
+    pub fn build(self) -> Message {
+        self.message
+    }
+}
+
+/// Statistics data (placeholder for comprehensive stats)
+pub type Stats = Value;

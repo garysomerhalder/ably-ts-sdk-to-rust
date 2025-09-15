@@ -23,7 +23,7 @@ impl ProtocolCodec {
     }
 
     /// Encode a protocol message
-    pub fn encode<T: Serialize>(&self, message: &T) -> AblyResult<Vec<u8>> {
+    pub fn encode<T: Serialize + ?Sized>(&self, message: &T) -> AblyResult<Vec<u8>> {
         match self.format {
             EncodingFormat::Json => {
                 serde_json::to_vec(message)

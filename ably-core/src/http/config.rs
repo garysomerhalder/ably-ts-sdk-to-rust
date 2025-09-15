@@ -13,6 +13,10 @@ pub struct HttpConfig {
     pub pool_idle_timeout: Option<Duration>,
     /// Maximum idle connections per host
     pub pool_max_idle_per_host: usize,
+    /// Maximum number of retries
+    pub max_retries: u32,
+    /// Base URL for API requests
+    pub base_url: String,
 }
 
 impl Default for HttpConfig {
@@ -22,6 +26,8 @@ impl Default for HttpConfig {
             connect_timeout: Duration::from_secs(5),
             pool_idle_timeout: Some(Duration::from_secs(90)),
             pool_max_idle_per_host: 32,
+            max_retries: 3,
+            base_url: "https://sandbox-rest.ably.io".to_string(),
         }
     }
 }
@@ -40,6 +46,8 @@ pub struct HttpConfigBuilder {
     connect_timeout: Option<Duration>,
     pool_idle_timeout: Option<Duration>,
     pool_max_idle_per_host: Option<usize>,
+    max_retries: Option<u32>,
+    base_url: Option<String>,
 }
 
 impl HttpConfigBuilder {
@@ -67,6 +75,18 @@ impl HttpConfigBuilder {
         self
     }
 
+    /// Set max retries
+    pub fn max_retries(mut self, retries: u32) -> Self {
+        self.max_retries = Some(retries);
+        self
+    }
+
+    /// Set base URL
+    pub fn base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = Some(url.into());
+        self
+    }
+
     /// Build the configuration
     pub fn build(self) -> HttpConfig {
         let default = HttpConfig::default();
@@ -75,6 +95,8 @@ impl HttpConfigBuilder {
             connect_timeout: self.connect_timeout.unwrap_or(default.connect_timeout),
             pool_idle_timeout: self.pool_idle_timeout.or(default.pool_idle_timeout),
             pool_max_idle_per_host: self.pool_max_idle_per_host.unwrap_or(default.pool_max_idle_per_host),
+            max_retries: self.max_retries.unwrap_or(default.max_retries),
+            base_url: self.base_url.unwrap_or(default.base_url),
         }
     }
 }

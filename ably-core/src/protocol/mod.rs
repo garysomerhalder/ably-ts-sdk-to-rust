@@ -9,6 +9,3 @@ pub use messages::{
     ProtocolMessage, Action, Message, PresenceMessage, PresenceAction,
     ErrorInfo, AuthDetails, ConnectionDetails, flags
 };
-
-// Keep compatibility with transport module
-pub use crate::transport::{ProtocolMessage as TransportProtocolMessage, Action as TransportAction};

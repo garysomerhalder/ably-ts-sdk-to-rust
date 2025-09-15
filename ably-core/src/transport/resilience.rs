@@ -128,7 +128,7 @@ impl HeartbeatManager {
         let last_pong = Arc::clone(&self.last_pong);
 
         tokio::spawn(async move {
-            let mut heartbeat_interval = interval(interval);
+            let mut heartbeat_interval = tokio::time::interval(interval);
             
             loop {
                 heartbeat_interval.tick().await;
