@@ -5,5 +5,16 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "ably_ffi"
+crate-type = ["cdylib", "staticlib"]
+
 [dependencies]
 ably-core = { path = "../ably-core" }
+libc = "0.2"
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[build-dependencies]
+cbindgen = "0.26"
