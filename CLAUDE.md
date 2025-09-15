@@ -4,199 +4,210 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository is for porting the Ably JavaScript/TypeScript SDK (v2.12.0) to Rust while maintaining 100% API compatibility. The `ably-js/` directory contains the reference TypeScript implementation with 164 TypeScript source files.
+This repository ports the Ably JavaScript/TypeScript SDK (v2.12.0) to Rust while maintaining 100% API compatibility. The project follows strict Traffic-Light Development methodology with Integration-First testing (no mocks).
+
+## Development Commands
+
+### Rust SDK (Main Project)
+
+```bash
+# Build commands
+cargo build                          # Build all workspace crates
+cargo build --release                # Build optimized release version
+cargo build -p ably-core            # Build specific crate
+
+# Testing commands
+cargo test                           # Run all tests
+cargo test -p ably-core             # Test specific crate
+cargo test --test <test_name>       # Run specific test file
+cargo test test_basic_get_request   # Run test by name pattern
+cargo test -- --nocapture           # Show println! output during tests
+
+# Documentation
+cargo doc --open                     # Generate and view documentation
+cargo doc --no-deps                  # Document only this project
+
+# Code quality
+cargo fmt                            # Format all code
+cargo clippy                         # Run linter
+cargo check                          # Quick compilation check
+```
+
+### JavaScript Reference SDK (ably-js/)
+
+```bash
+cd ably-js
+npm install                          # Initial setup
+npm run build                        # Build all targets
+npm test                            # Run tests
+npm run test:grep <pattern>         # Run specific tests
+```
 
 ## Repository Structure
 
 ```
 /root/repo/
-├── ably-js/                 # Reference TypeScript SDK
+├── ably-core/                      # Core SDK implementation
 │   ├── src/
-│   │   ├── common/lib/      # Core library (client, transport, types, util)
-│   │   ├── platform/        # Platform-specific code (nodejs, web, react-native, nativescript)
-│   │   └── plugins/         # Plugin system (push, objects)
-│   ├── test/                # Test suites
-│   │   ├── realtime/        # Realtime client tests
-│   │   ├── rest/            # REST client tests
-│   │   ├── browser/         # Browser-specific tests
-│   │   └── unit/            # Unit tests
-│   └── build/               # Build outputs
-└── [future directories for Rust implementation]
-```
-
-## Development Commands
-
-### Ably JavaScript SDK (Reference Implementation)
-
-```bash
-# Setup and build
-cd ably-js
-npm install
-npm run build                # Build all targets
-npm run build:node           # Node.js build only
-npm run build:browser        # Browser build only
-npm run build:react          # React hooks build
-
-# Testing
-npm test                     # Run Node.js tests (realtime, rest, unit)
-npm run test:playwright      # Run browser tests via Playwright
-npm run test:react           # Run React tests with Vitest
-npm run test:grep <pattern>  # Run specific tests by pattern
-
-# Code quality
-npm run lint                 # ESLint
-npm run lint:fix             # Auto-fix linting issues
-npm run format               # Prettier formatting
-npm run format:check         # Check formatting
-
-# Development
-npm run grunt -- test:webserver  # Start test webserver
-npm run sourcemap            # Analyze bundle with source-map-explorer
-npm run modulereport         # Generate module size report
-```
-
-### Future Rust SDK Commands
-
-```bash
-# Build
-cargo build --release
-cargo build --features "push objects"  # With optional features
-
-# Testing
-cargo test                   # All tests
-cargo test --test integration -- --test-threads=1  # Integration tests serially
-cargo test <test_name>       # Single test
-
-# Documentation
-cargo doc --open             # Generate and view docs
+│   │   ├── auth/                   # Authentication module
+│   │   ├── client/                 # REST and Realtime clients
+│   │   ├── error/                  # Error handling with Ably codes
+│   │   ├── http/                   # HTTP client with resilience
+│   │   ├── logging/                # Structured logging/tracing
+│   │   ├── protocol/               # Protocol messages (pending)
+│   │   └── transport/              # WebSocket transport (pending)
+│   └── tests/                      # Integration tests (real API only)
+├── ably-node/                      # Node.js bindings (future)
+├── ably-wasm/                      # WebAssembly bindings (future)
+├── ably-ffi/                       # C FFI bindings (future)
+├── ably-js/                        # Reference TypeScript SDK
+└── tasks/                          # Task tracking and progress
 ```
 
 ## High-Level Architecture
 
-### Core Components (from ably-js)
+### Current Implementation Status
 
-#### 1. Client Architecture (`src/common/lib/client/`)
-- **BaseClient** (7.5KB): Core functionality shared between REST and Realtime
-- **Auth** (42KB): Handles API key auth, JWT tokens, token renewal, and client ID validation
-- **BaseRealtime** (8.9KB): Extends BaseClient with realtime capabilities
-- **DefaultRealtime** (3.3KB): Full-featured client with all plugins
+#### ✅ Completed Components
+- **HTTP Client** (`ably-core/src/http/`): Production-ready with circuit breaker, rate limiting, and metrics
+- **Error System** (`ably-core/src/error/`): Ably protocol error codes (40000-50000 range)
+- **Logging** (`ably-core/src/logging/`): Structured logging with OpenTelemetry readiness
+- **Authentication** (`ably-core/src/auth/`): API key and token support
 
-#### 2. Transport Layer (`src/common/lib/transport/`)
-- **ConnectionManager** (73KB): Manages connection lifecycle, state machine, reconnection logic
-- **WebSocketTransport** (8.3KB): Primary realtime transport
-- **CometTransport** (13.8KB): HTTP streaming fallback
-- **Protocol** (3.4KB): Wire protocol handling, message queuing
-- **MessageQueue** (2.4KB): Handles message acknowledgments and retries
-
-#### 3. Protocol Messages (`src/common/lib/types/`)
-The SDK implements 22 protocol action types:
-- Connection: CONNECT, CONNECTED, DISCONNECT, DISCONNECTED, CLOSE, CLOSED
-- Channel: ATTACH, ATTACHED, DETACH, DETACHED
-- Messaging: MESSAGE, PRESENCE, SYNC
-- Control: HEARTBEAT, ACK, NACK, ERROR, AUTH, ACTIVATE
-- Objects: OBJECT, OBJECT_SYNC, ANNOTATION
-
-Channel flags control capabilities like PRESENCE, PUBLISH, SUBSCRIBE, and OBJECT operations.
-
-#### 4. Channel System (`src/common/lib/client/`)
-- **RealtimeChannel** (34KB): Core channel functionality with state machine
-- **RealtimePresence** (15KB): Presence set synchronization
-- **FilteredSubscriptions** (4.1KB): Message filtering support
-
-#### 5. Platform Abstraction
-The SDK abstracts platform differences through:
-- Separate implementations for Node.js, Web, React Native, NativeScript
-- Platform-specific defaults, crypto, and transport selection
-- Modular build system producing platform-specific bundles
-
-### Connection State Machine
-
-States: initialized → connecting → connected → disconnected → suspended → closing → closed → failed
-
-Key transitions:
-- Auto-reconnect with exponential backoff on disconnect
-- Suspend after prolonged disconnection
-- Failed state requires manual intervention
-
-### Channel State Machine
-
-States: initialized → attaching → attached → detaching → detached → suspended → failed
-
-Operations are queued when channel is not attached.
-
-## Rust Port Implementation Strategy
-
-### Phase Structure
-
-1. **Core Infrastructure**: HTTP client, auth, error handling
-2. **Protocol Layer**: ProtocolMessage types, WebSocket transport, state machines
-3. **Client Implementation**: REST client, Realtime client, channels
-4. **Feature Parity**: Presence, push, encryption, plugins
-5. **Bindings**: Node.js (napi-rs), WASM, C FFI
+#### 🔴 In Progress
+- **WebSocket Transport**: Tests written, implementation pending
+- **Protocol Messages**: 22 action types to implement
+- **Connection State Machine**: Full state transitions needed
 
 ### Critical Implementation Requirements
 
-- **Protocol Version**: Must implement Ably protocol v3
-- **Encoding**: Support both MessagePack (preferred) and JSON
-- **Error Codes**: Use Ably error codes (40000-50000 range)
-- **Retry Logic**: Exponential backoff with jitter
-- **State Machines**: Must match JavaScript SDK state transitions exactly
-- **Testing**: Integration tests against real Ably sandbox (no mocks)
+1. **Protocol Compatibility**
+   - Must implement Ably protocol v3
+   - Support both MessagePack and JSON encoding
+   - Maintain exact state machine transitions from JS SDK
 
-### Key Files to Study
+2. **Testing Philosophy**
+   - ALL tests must use real Ably sandbox API
+   - Never use mocks or fakes (Integration-First)
+   - Test API key: `BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA`
 
-1. **Authentication**: `ably-js/src/common/lib/client/auth.ts`
-2. **Connection Management**: `ably-js/src/common/lib/transport/connectionmanager.ts`
-3. **Channel Operations**: `ably-js/src/common/lib/client/realtimechannel.ts`
-4. **Protocol Definition**: `ably-js/src/common/lib/types/protocolmessagecommon.ts`
-5. **Transport Layer**: `ably-js/src/common/lib/transport/websockettransport.ts`
+3. **Traffic-Light Development**
+   - 🔴 RED: Write failing tests against real API
+   - 🟡 YELLOW: Minimal implementation to pass
+   - 🟢 GREEN: Add resilience and production features
+   - Commit after EACH phase
 
-## Testing Approach
+### State Machines
 
-The JavaScript SDK has comprehensive tests in:
-- `test/realtime/`: Realtime client tests
-- `test/rest/`: REST API tests
-- `test/browser/`: Browser-specific tests
-- `test/unit/`: Unit tests
+#### Connection States
+```
+initialized → connecting → connected → disconnected → suspended → closing → closed → failed
+```
+- Auto-reconnect with exponential backoff
+- Suspend after prolonged disconnection
+- Failed requires manual intervention
 
-Tests use real Ably sandbox environments. The Rust port should:
-1. Port test cases maintaining the same structure
-2. Use integration tests against real Ably services
-3. Never use mocks (Integration-First approach)
-4. Match test coverage of JavaScript SDK
+#### Channel States
+```
+initialized → attaching → attached → detaching → detached → suspended → failed
+```
+- Operations queue when not attached
+- Automatic reattachment on reconnection
+
+## Key Reference Files
+
+When implementing new features, study these JavaScript SDK files:
+
+1. **Auth System**: `ably-js/src/common/lib/client/auth.ts` (42KB)
+2. **Connection Manager**: `ably-js/src/common/lib/transport/connectionmanager.ts` (73KB)
+3. **WebSocket Transport**: `ably-js/src/common/lib/transport/websockettransport.ts` (8.3KB)
+4. **Protocol Messages**: `ably-js/src/common/lib/types/protocolmessagecommon.ts`
+5. **Realtime Channel**: `ably-js/src/common/lib/client/realtimechannel.ts` (34KB)
+
+## Task Management
+
+Tasks are tracked in `/tasks/` directory with current status in:
+- `/tasks/INFRASTRUCTURE_PHASE_STATUS.md` - Current phase progress
+- `/tasks/task-files/` - Individual task specifications
+
+Current Progress:
+- Foundation Phase: ✅ Complete (5/5 tasks)
+- Infrastructure Phase: 🟡 In Progress (1/5 tasks)
+- Overall: ~15% complete
+
+## Testing Guidelines
+
+1. **Environment Setup**
+   ```bash
+   export ABLY_API_KEY_SANDBOX="BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA"
+   ```
+
+2. **Test Organization**
+   - Unit tests: In `src/` modules with `#[cfg(test)]`
+   - Integration tests: In `tests/` directory
+   - All tests must connect to real Ably sandbox
+
+3. **Test Patterns**
+   ```rust
+   // Always use real endpoints
+   let response = client.get("https://sandbox-rest.ably.io/time").await;
+   
+   // Never mock
+   // ❌ let mock_server = MockServer::start();
+   // ✅ let real_api = "https://sandbox-rest.ably.io";
+   ```
 
 ## Performance Targets
 
-Based on JavaScript SDK capabilities:
+Based on JavaScript SDK benchmarks:
 - Connection establishment: <200ms
 - Message latency: <50ms regional
-- Throughput: >10,000 messages/second per connection
-- Binary size: WASM bundle <200KB gzipped
+- Throughput: >10,000 messages/second
+- WASM bundle: <200KB gzipped
 
-## Recommended Rust Dependencies
+## Workspace Dependencies
 
+Key dependencies are managed at workspace level in root `Cargo.toml`:
 ```toml
-# Core
-tokio = "1.40"              # Async runtime
-reqwest = "0.12"            # HTTP client
-tokio-tungstenite = "0.24"  # WebSocket client
+tokio = "1.40"                      # Async runtime
+reqwest = "0.12"                    # HTTP client
+tokio-tungstenite = "0.24"          # WebSocket
+serde = "1.0"                       # Serialization
+rmp-serde = "1.3"                   # MessagePack
+thiserror = "2.0"                   # Error handling
+tracing = "0.1"                     # Logging
+```
 
-# Serialization
-serde = "1.0"
-serde_json = "1.0"
-rmp-serde = "1.3"           # MessagePack
+## Protocol Action Types
 
-# Utilities
-thiserror = "2.0"           # Error handling
-tracing = "0.1"             # Logging
-dashmap = "6.0"             # Concurrent collections
-base64 = "0.22"
+The SDK must implement these 22 protocol actions:
+- **Connection**: CONNECT, CONNECTED, DISCONNECT, DISCONNECTED, CLOSE, CLOSED
+- **Channel**: ATTACH, ATTACHED, DETACH, DETACHED  
+- **Messaging**: MESSAGE, PRESENCE, SYNC
+- **Control**: HEARTBEAT, ACK, NACK, ERROR, AUTH, ACTIVATE
+- **Objects**: OBJECT, OBJECT_SYNC, ANNOTATION
 
-# Crypto
-ring = "0.17"               # Cryptography
-aes-gcm = "0.10"            # AES encryption
+## Common Development Patterns
 
-# Bindings
-napi = "3.0"                # Node.js bindings
-wasm-bindgen = "0.2"        # WebAssembly
+### Adding a New Module
+1. Create tests first (RED phase) in `tests/`
+2. Implement minimal code (YELLOW phase) in `src/`
+3. Add resilience features (GREEN phase)
+4. Commit after each phase
+
+### Error Handling
+```rust
+use ably_core::error::{AblyError, AblyResult};
+
+// Use Ably-specific error codes
+AblyError::from_ably_code(40400, "Not found")
+```
+
+### Real API Integration
+```rust
+// Always use real endpoints
+let client = AblyHttpClient::with_auth(
+    HttpConfig::default(),
+    AuthMode::ApiKey(api_key)
+);
 ```
