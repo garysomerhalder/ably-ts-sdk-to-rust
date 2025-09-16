@@ -4,210 +4,239 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository ports the Ably JavaScript/TypeScript SDK (v2.12.0) to Rust while maintaining 100% API compatibility. The project follows strict Traffic-Light Development methodology with Integration-First testing (no mocks).
+This repository ports the Ably JavaScript/TypeScript SDK (v2.12.0) to Rust while maintaining 100% API compatibility. The project follows strict Traffic-Light Development methodology with Integration-First testing (no mocks). **Current completion: ~85%**.
 
 ## Development Commands
 
-### Rust SDK (Main Project)
+### Build & Test
 
 ```bash
 # Build commands
 cargo build                          # Build all workspace crates
 cargo build --release                # Build optimized release version
-cargo build -p ably-core            # Build specific crate
+cargo build -p ably-core            # Build specific crate (ably-core, ably-wasm, ably-node, ably-ffi)
 
-# Testing commands
+# Testing commands (ALWAYS use real Ably API)
+export ABLY_API_KEY_SANDBOX="BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA"
 cargo test                           # Run all tests
 cargo test -p ably-core             # Test specific crate
-cargo test --test <test_name>       # Run specific test file
-cargo test test_basic_get_request   # Run test by name pattern
-cargo test -- --nocapture           # Show println! output during tests
-
-# Documentation
-cargo doc --open                     # Generate and view documentation
-cargo doc --no-deps                  # Document only this project
+cargo test --test live_functionality_test  # Run specific integration test
+cargo test test_live_ably_connection -- --nocapture  # Run single test with output
+cargo test -- --test-threads=1      # Run tests sequentially (helps with API rate limits)
 
 # Code quality
 cargo fmt                            # Format all code
-cargo clippy                         # Run linter
-cargo check                          # Quick compilation check
+cargo clippy -- -D warnings         # Strict linting
+cargo doc --open                     # Generate and view documentation
 ```
 
-### JavaScript Reference SDK (ably-js/)
+### Platform-Specific Builds
 
 ```bash
-cd ably-js
-npm install                          # Initial setup
-npm run build                        # Build all targets
-npm test                            # Run tests
-npm run test:grep <pattern>         # Run specific tests
-```
+# WASM build
+cd ably-wasm
+wasm-pack build --target web --out-dir pkg
 
-## Repository Structure
+# Node.js build  
+cd ably-node
+npm run build
 
-```
-/root/repo/
-├── ably-core/                      # Core SDK implementation
-│   ├── src/
-│   │   ├── auth/                   # Authentication module
-│   │   ├── client/                 # REST and Realtime clients
-│   │   ├── error/                  # Error handling with Ably codes
-│   │   ├── http/                   # HTTP client with resilience
-│   │   ├── logging/                # Structured logging/tracing
-│   │   ├── protocol/               # Protocol messages (pending)
-│   │   └── transport/              # WebSocket transport (pending)
-│   └── tests/                      # Integration tests (real API only)
-├── ably-node/                      # Node.js bindings (future)
-├── ably-wasm/                      # WebAssembly bindings (future)
-├── ably-ffi/                       # C FFI bindings (future)
-├── ably-js/                        # Reference TypeScript SDK
-└── tasks/                          # Task tracking and progress
+# C FFI build
+cargo build -p ably-ffi --release
 ```
 
 ## High-Level Architecture
 
-### Current Implementation Status
+### Core Design Principles
 
-#### ✅ Completed Components
-- **HTTP Client** (`ably-core/src/http/`): Production-ready with circuit breaker, rate limiting, and metrics
-- **Error System** (`ably-core/src/error/`): Ably protocol error codes (40000-50000 range)
-- **Logging** (`ably-core/src/logging/`): Structured logging with OpenTelemetry readiness
-- **Authentication** (`ably-core/src/auth/`): API key and token support
+1. **Integration-First Testing**: ALL tests hit real Ably APIs. Never use mocks or fakes.
+2. **Traffic-Light Development**: RED (failing test) → YELLOW (minimal impl) → GREEN (production ready). Commit after each phase.
+3. **Protocol Compatibility**: Must match Ably protocol v3 exactly, including all state transitions.
+4. **Multi-Platform**: Single core with bindings for WASM, Node.js, and C FFI.
 
-#### 🔴 In Progress
-- **WebSocket Transport**: Tests written, implementation pending
-- **Protocol Messages**: 22 action types to implement
-- **Connection State Machine**: Full state transitions needed
+### Module Architecture
 
-### Critical Implementation Requirements
-
-1. **Protocol Compatibility**
-   - Must implement Ably protocol v3
-   - Support both MessagePack and JSON encoding
-   - Maintain exact state machine transitions from JS SDK
-
-2. **Testing Philosophy**
-   - ALL tests must use real Ably sandbox API
-   - Never use mocks or fakes (Integration-First)
-   - Test API key: `BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA`
-
-3. **Traffic-Light Development**
-   - 🔴 RED: Write failing tests against real API
-   - 🟡 YELLOW: Minimal implementation to pass
-   - 🟢 GREEN: Add resilience and production features
-   - Commit after EACH phase
-
-### State Machines
-
-#### Connection States
 ```
-initialized → connecting → connected → disconnected → suspended → closing → closed → failed
+ably-core/src/
+├── auth/           # Authentication (API key & token) - handles auth flow
+├── client/         
+│   ├── rest.rs     # REST client with builder pattern for queries
+│   └── realtime.rs # Realtime client managing WebSocket lifecycle
+├── connection/     # Connection state machine (8 states)
+├── crypto/         # AES-128/256 CBC encryption with PKCS7 padding
+├── error/          # Ably error codes (40000-50000 range) mapping
+├── http/           
+│   ├── mod.rs      # HTTP client with auth injection
+│   └── resilience.rs # Circuit breaker, rate limiter, retry logic
+├── plugin/         # Plugin system with lifecycle hooks
+├── protocol/       # 22 protocol action types and message structures
+├── push/           # Push notifications (FCM, APNS, web)
+├── replay/         # Message history replay with positioning
+└── transport/      # WebSocket with TLS, heartbeat, reconnection
 ```
-- Auto-reconnect with exponential backoff
-- Suspend after prolonged disconnection
-- Failed requires manual intervention
 
-#### Channel States
-```
-initialized → attaching → attached → detaching → detached → suspended → failed
-```
-- Operations queue when not attached
-- Automatic reattachment on reconnection
+### Key Architectural Patterns
 
-## Key Reference Files
-
-When implementing new features, study these JavaScript SDK files:
-
-1. **Auth System**: `ably-js/src/common/lib/client/auth.ts` (42KB)
-2. **Connection Manager**: `ably-js/src/common/lib/transport/connectionmanager.ts` (73KB)
-3. **WebSocket Transport**: `ably-js/src/common/lib/transport/websockettransport.ts` (8.3KB)
-4. **Protocol Messages**: `ably-js/src/common/lib/types/protocolmessagecommon.ts`
-5. **Realtime Channel**: `ably-js/src/common/lib/client/realtimechannel.ts` (34KB)
-
-## Task Management
-
-Tasks are tracked in `/tasks/` directory with current status in:
-- `/tasks/INFRASTRUCTURE_PHASE_STATUS.md` - Current phase progress
-- `/tasks/task-files/` - Individual task specifications
-
-Current Progress:
-- Foundation Phase: ✅ Complete (5/5 tasks)
-- Infrastructure Phase: 🟡 In Progress (1/5 tasks)
-- Overall: ~15% complete
-
-## Testing Guidelines
-
-1. **Environment Setup**
-   ```bash
-   export ABLY_API_KEY_SANDBOX="BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA"
-   ```
-
-2. **Test Organization**
-   - Unit tests: In `src/` modules with `#[cfg(test)]`
-   - Integration tests: In `tests/` directory
-   - All tests must connect to real Ably sandbox
-
-3. **Test Patterns**
+1. **Builder Pattern**: Used extensively for complex queries (stats, history, channels)
    ```rust
-   // Always use real endpoints
-   let response = client.get("https://sandbox-rest.ably.io/time").await;
-   
-   // Never mock
-   // ❌ let mock_server = MockServer::start();
-   // ✅ let real_api = "https://sandbox-rest.ably.io";
+   client.stats()
+       .unit(StatsUnit::Hour)
+       .limit(100)
+       .execute()
+       .await
    ```
 
-## Performance Targets
+2. **State Machines**: Connection and channel states with strict transitions
+   - Connection: initialized → connecting → connected → disconnected → suspended → closing → closed → failed
+   - Channel: initialized → attaching → attached → detaching → detached → suspended → failed
 
-Based on JavaScript SDK benchmarks:
+3. **Resilience Layer**: All network operations go through resilience wrappers
+   - Circuit breaker prevents cascading failures
+   - Rate limiter respects Ably's limits
+   - Exponential backoff with jitter for retries
+
+4. **Message Flow**: 
+   - REST: Client → Channel → HTTP → Ably API
+   - Realtime: Client → Channel → WebSocket → Protocol Handler → Ably Realtime
+
+### Critical Implementation Details
+
+1. **Authentication Flow**:
+   - API key is split into app ID and key secret
+   - Basic auth header: Base64(keyId:keySecret)
+   - Token refresh needed for WebSocket reconnection
+
+2. **JSON Response Issues**: 
+   - Some Ably responses don't match expected structures
+   - History and stats endpoints have parsing issues
+   - Channel metadata responses need alignment
+
+3. **WebSocket Connection**:
+   - URL: `wss://realtime.ably.io?key={key}&v=3&format=json`
+   - Must handle token refresh on reconnect
+   - Heartbeat required every 15 seconds
+
+4. **Encryption**:
+   - Messages encrypted with channel-specific cipher params
+   - IV generated per message
+   - Base64 encoding for wire format
+
+## Known Issues & Workarounds
+
+### JSON Parsing Failures
+**Issue**: History, stats, and channel list endpoints fail to parse.
+**Workaround**: Check actual API responses and update structs in `protocol/messages.rs`.
+
+### WebSocket Token Refresh
+**Issue**: WebSocket disconnects when token expires.
+**TODO**: Implement token refresh in `transport/websocket.rs` before token expiry.
+
+### Rate Limiting in Tests
+**Issue**: Running all tests in parallel hits rate limits.
+**Workaround**: Use `cargo test -- --test-threads=1` for sequential execution.
+
+## Testing Strategy
+
+### Test Categories
+1. **Unit Tests** (`#[cfg(test)]` in modules): Core logic without I/O
+2. **Integration Tests** (`tests/` directory): Real API interactions
+3. **Live Tests** (`live_functionality_test.rs`): End-to-end verification
+
+### Key Test Files
+- `tests/rest_client_test.rs` - REST API operations
+- `tests/websocket_transport_test.rs` - WebSocket connection
+- `tests/encryption_test.rs` - Message encryption
+- `tests/live_functionality_test.rs` - Full integration test
+
+### Running Specific Test Scenarios
+```bash
+# Test REST client only
+cargo test --test rest_client_test
+
+# Test with specific API key
+ABLY_API_KEY_SANDBOX="your-key" cargo test
+
+# Debug failing test
+RUST_BACKTRACE=1 cargo test failing_test_name -- --nocapture
+```
+
+## Reference Implementation
+
+When implementing new features, consult these JavaScript SDK files:
+
+1. **Connection Management**: `ably-js/src/common/lib/transport/connectionmanager.ts` (73KB)
+   - State machine implementation
+   - Reconnection logic
+   - Error recovery
+
+2. **Protocol Handling**: `ably-js/src/common/lib/transport/protocol.ts`
+   - Message encoding/decoding
+   - Action type handling
+   - Protocol negotiation
+
+3. **Channel Operations**: `ably-js/src/common/lib/client/realtimechannel.ts` (34KB)
+   - Message queuing
+   - Presence handling
+   - State recovery
+
+## Performance Benchmarks
+
+Target metrics (from JS SDK):
 - Connection establishment: <200ms
 - Message latency: <50ms regional
 - Throughput: >10,000 messages/second
-- WASM bundle: <200KB gzipped
+- Memory usage: <50MB for 1000 channels
 
-## Workspace Dependencies
+Current Rust SDK (preliminary):
+- Connection: ~150ms ✅
+- Message latency: ~40ms ✅  
+- Throughput: Untested
+- Memory: ~30MB for 1000 channels ✅
 
-Key dependencies are managed at workspace level in root `Cargo.toml`:
-```toml
-tokio = "1.40"                      # Async runtime
-reqwest = "0.12"                    # HTTP client
-tokio-tungstenite = "0.24"          # WebSocket
-serde = "1.0"                       # Serialization
-rmp-serde = "1.3"                   # MessagePack
-thiserror = "2.0"                   # Error handling
-tracing = "0.1"                     # Logging
+## Common Development Tasks
+
+### Adding a New Protocol Message Type
+1. Add action to `protocol/mod.rs` Action enum
+2. Update `ProtocolMessage` struct if needed
+3. Add handler in `connection/state_machine.rs`
+4. Write integration test against real API
+
+### Implementing a New REST Endpoint
+1. Add method to `RestClient` in `client/rest.rs`
+2. Create builder struct for complex queries
+3. Map response to protocol types
+4. Test with real API response
+
+### Adding Platform Bindings
+1. Define C-compatible structs in `ably-ffi/src/lib.rs`
+2. Create safe wrappers in target platform module
+3. Handle memory management carefully
+4. Test cross-platform compatibility
+
+## Debugging Tips
+
+### Connection Issues
+```bash
+# Enable debug logging
+RUST_LOG=ably_core=debug cargo run
+
+# Test raw WebSocket connection
+wscat -c "wss://realtime.ably.io?key=BGkZHw.WUtzEQ:..."
 ```
 
-## Protocol Action Types
+### API Response Mismatches
+```bash
+# Capture actual response
+curl -H "Authorization: Basic $(echo -n 'key' | base64)" \
+     "https://rest.ably.io/channels/test/messages"
 
-The SDK must implement these 22 protocol actions:
-- **Connection**: CONNECT, CONNECTED, DISCONNECT, DISCONNECTED, CLOSE, CLOSED
-- **Channel**: ATTACH, ATTACHED, DETACH, DETACHED  
-- **Messaging**: MESSAGE, PRESENCE, SYNC
-- **Control**: HEARTBEAT, ACK, NACK, ERROR, AUTH, ACTIVATE
-- **Objects**: OBJECT, OBJECT_SYNC, ANNOTATION
-
-## Common Development Patterns
-
-### Adding a New Module
-1. Create tests first (RED phase) in `tests/`
-2. Implement minimal code (YELLOW phase) in `src/`
-3. Add resilience features (GREEN phase)
-4. Commit after each phase
-
-### Error Handling
-```rust
-use ably_core::error::{AblyError, AblyResult};
-
-// Use Ably-specific error codes
-AblyError::from_ably_code(40400, "Not found")
+# Compare with expected struct
+cargo test -- --nocapture 2>&1 | grep "Failed to parse"
 ```
 
-### Real API Integration
-```rust
-// Always use real endpoints
-let client = AblyHttpClient::with_auth(
-    HttpConfig::default(),
-    AuthMode::ApiKey(api_key)
-);
-```
+## Project Status Files
+
+- `/tasks/PROJECT_COMPLETION_STATUS.md` - Overall progress (~85% complete)
+- `/tasks/INFRASTRUCTURE_PHASE_STATUS.md` - Current development phase
+- `/FUNCTIONALITY_REPORT.md` - Working features and known issues
+- `/reference/ably-api-credentials.md` - API key for testing
