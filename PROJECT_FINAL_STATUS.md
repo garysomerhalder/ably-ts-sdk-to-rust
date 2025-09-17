@@ -1,6 +1,6 @@
 # Ably Rust SDK - Final Project Status
 
-## 🎯 Project Completion: ~90%
+## 🎯 Project Completion: ~92%
 
 **Date:** January 16, 2025
 **Engineer:** Senior Rust Engineer (Autonomous Development)
@@ -42,18 +42,22 @@
 
 ## ⚠️ Known Issues
 
-### WebSocket Connection (60% Complete)
-- ❌ 400 Bad Request error when connecting
-- **Attempted Solutions:**
-  - Tried protocol versions: v=3, v=2, v=1.2
-  - Added custom headers: User-Agent, X-Ably-Version, X-Ably-Lib
-  - Tested with URL-encoded API key (colon as %3A)
-  - Tested without URL encoding
-  - Removed optional parameters (echo, heartbeats, format)
-  - Used custom HTTP request builder with proper WebSocket headers
-- **Current WebSocket URL format:**
-  - `wss://realtime.ably.io?v=1.2&key=BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA`
-- **Hypothesis:** May need token authentication instead of API key for WebSocket
+### WebSocket Connection (65% Complete)
+- ❌ 400 Bad Request error persists despite extensive debugging
+- **All Attempted Solutions:**
+  1. Tried protocol versions: v=3, v=2, v=1.2
+  2. Added custom headers: User-Agent, X-Ably-Version, X-Ably-Lib, proper WebSocket upgrade headers
+  3. Tested with URL-encoded API key (colon as %3A) and without encoding
+  4. Removed optional parameters (echo, heartbeats, format) for minimal request
+  5. Used custom HTTP request builder with tokio-tungstenite
+  6. **Implemented token authentication** - Successfully obtains tokens from REST API
+  7. Tested both API key and token authentication methods
+  8. Fixed token request endpoint to `/keys/{keyName}/requestToken` with required fields
+- **Token Request Working:** ✅ Can successfully obtain auth tokens from REST API
+- **Current WebSocket URLs Tested:**
+  - API Key: `wss://realtime.ably.io?v=1.2&key=BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA`
+  - Token: `wss://realtime.ably.io?v=1.2&access_token={token}`
+- **Root Cause Unknown:** 400 error suggests fundamental protocol mismatch or missing requirement
 
 ### Remaining Work
 - Token refresh mechanism for reconnection
@@ -101,11 +105,12 @@ The WebSocket fails because:
 
 ## 🎯 Recommendations for Completion
 
-1. **WebSocket Fix Priority:**
-   - Check JavaScript SDK for exact WebSocket parameters
-   - Add User-Agent header
-   - Try token-based auth instead of API key
-   - Consider using HTTP upgrade headers
+1. **WebSocket Debug Strategy (High Priority):**
+   - Use Wireshark/tcpdump to capture working JavaScript SDK WebSocket handshake
+   - Compare exact HTTP headers, query parameters, and protocol negotiation
+   - Check if additional Ably-specific WebSocket subprotocols are required
+   - Verify if client needs to send initial protocol message after connection
+   - Consider reaching out to Ably support with specific 400 error details
 
 2. **Final 10% Tasks:**
    - Debug WebSocket with packet capture
