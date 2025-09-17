@@ -1,5 +1,8 @@
 use ably_core::transport::websocket::WebSocketTransport;
+use ably_core::transport::TransportConfig;
 use ably_core::protocol::{ProtocolMessage, Action};
+use ably_core::client::rest::RestClient;
+use ably_core::auth::AuthMode;
 
 #[tokio::test]
 async fn test_websocket_connection_to_ably() {
@@ -8,7 +11,7 @@ async fn test_websocket_connection_to_ably() {
     let api_key = "BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA";
     
     println!("1️⃣ Creating WebSocket transport...");
-    let mut transport = WebSocketTransport::with_api_key(api_key);
+    let transport = WebSocketTransport::with_api_key(api_key);
     
     println!("2️⃣ Connecting to Ably realtime...");
     match transport.connect().await {
@@ -59,4 +62,41 @@ async fn test_websocket_connection_to_ably() {
     }
     
     println!("\n✨ WebSocket connection test complete!");
+}
+
+#[tokio::test]
+async fn test_websocket_with_token_auth() {
+    println!("\n🔧 Testing WebSocket Connection with Token Authentication\n");
+    
+    let api_key = "BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA";
+    
+    // First get a token from the REST API
+    println!("1️⃣ Requesting auth token from REST API...");
+    let rest_client = RestClient::new(api_key);
+    
+    match rest_client.auth().request_token().execute().await {
+        Ok(token_details) => {
+            println!("   ✅ Got token: {:?}", token_details.token);
+            
+            println!("2️⃣ Creating WebSocket transport with token...");
+            let config = TransportConfig::default();
+            let auth_mode = AuthMode::Token(token_details.token.clone());
+            let transport = WebSocketTransport::new("wss://realtime.ably.io", config, auth_mode);
+            
+            println!("3️⃣ Connecting to Ably realtime with token...");
+            match transport.connect().await {
+                Ok(()) => {
+                    println!("   ✅ Connected successfully with token!");
+                }
+                Err(e) => {
+                    println!("   ❌ Connection failed with token: {}", e);
+                    panic!("WebSocket connection should work with token");
+                }
+            }
+        }
+        Err(e) => {
+            println!("   ❌ Failed to get token: {}", e);
+            panic!("Should be able to get token from REST API");
+        }
+    }
 }

@@ -57,6 +57,11 @@ impl AblyHttpClient {
         client.auth_mode = Some(auth_mode);
         client
     }
+    
+    /// Get the authentication mode
+    pub fn auth_mode(&self) -> Option<&AuthMode> {
+        self.auth_mode.as_ref()
+    }
 
     /// Add a default header that will be included in all requests
     pub fn add_default_header(&mut self, key: impl Into<String>, value: impl Into<String>) {

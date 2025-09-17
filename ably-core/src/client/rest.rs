@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{debug, info, warn};
+use chrono;
 
 /// Main REST client for Ably API
 pub struct RestClient {
@@ -639,13 +640,38 @@ impl<'a> AuthOperations<'a> {
 pub struct TokenRequestBuilder<'a> {
     http_client: &'a AblyHttpClient,
     params: HashMap<String, Value>,
+    key_name: String,
 }
 
 impl<'a> TokenRequestBuilder<'a> {
     fn new(http_client: &'a AblyHttpClient) -> Self {
+        // Parse the API key to get the key name
+        let key_name = if let Some(AuthMode::ApiKey(key)) = http_client.auth_mode() {
+            let parts: Vec<&str> = key.split('.').collect();
+            if parts.len() >= 2 {
+                let app_id = parts[0];
+                let key_parts: Vec<&str> = parts[1].split(':').collect();
+                if !key_parts.is_empty() {
+                    format!("{}.{}", app_id, key_parts[0])
+                } else {
+                    "unknown".to_string()
+                }
+            } else {
+                "unknown".to_string()
+            }
+        } else {
+            "unknown".to_string()
+        };
+        
+        // Add timestamp and keyName to params (required)
+        let mut params = HashMap::new();
+        params.insert("timestamp".to_string(), json!(chrono::Utc::now().timestamp_millis()));
+        params.insert("keyName".to_string(), json!(&key_name));
+        
         Self {
             http_client,
-            params: HashMap::new(),
+            params,
+            key_name,
         }
     }
     
@@ -663,8 +689,9 @@ impl<'a> TokenRequestBuilder<'a> {
     }
     
     pub async fn execute(&self) -> AblyResult<TokenDetails> {
+        let path = format!("/keys/{}/requestToken", self.key_name);
         let response = self.http_client
-            .post("/keys/token")
+            .post(&path)
             .json(&self.params)
             .send()
             .await?;

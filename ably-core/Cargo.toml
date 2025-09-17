@@ -25,6 +25,7 @@ rand = { workspace = true }
 aes = { workspace = true }
 cbc = { workspace = true }
 urlencoding = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
