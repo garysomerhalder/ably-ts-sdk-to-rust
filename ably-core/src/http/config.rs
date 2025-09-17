@@ -27,7 +27,7 @@ impl Default for HttpConfig {
             pool_idle_timeout: Some(Duration::from_secs(90)),
             pool_max_idle_per_host: 32,
             max_retries: 3,
-            base_url: "https://sandbox-rest.ably.io".to_string(),
+            base_url: "https://rest.ably.io".to_string(),
         }
     }
 }
