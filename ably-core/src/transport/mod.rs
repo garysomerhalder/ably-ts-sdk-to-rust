@@ -67,7 +67,7 @@ impl WebSocketTransport {
     
     /// Create WebSocket transport with default configuration for API key auth
     pub fn with_api_key(api_key: &str) -> Self {
-        let url = "wss://realtime.ably.io";
+        let url = "wss://realtime.ably.io/"; // CRITICAL: Trailing slash is REQUIRED!
         let config = TransportConfig::default();
         let auth_mode = AuthMode::ApiKey(api_key.to_string());
         Self::new(url, config, auth_mode)

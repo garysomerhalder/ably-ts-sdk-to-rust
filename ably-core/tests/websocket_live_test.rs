@@ -81,7 +81,7 @@ async fn test_websocket_with_token_auth() {
             println!("2️⃣ Creating WebSocket transport with token...");
             let config = TransportConfig::default();
             let auth_mode = AuthMode::Token(token_details.token.clone());
-            let transport = WebSocketTransport::new("wss://realtime.ably.io", config, auth_mode);
+            let transport = WebSocketTransport::new("wss://realtime.ably.io/", config, auth_mode);
             
             println!("3️⃣ Connecting to Ably realtime with token...");
             match transport.connect().await {
