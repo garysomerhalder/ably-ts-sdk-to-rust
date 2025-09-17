@@ -502,16 +502,22 @@ impl<'a> StatsQuery<'a> {
     }
 }
 
-/// Statistics data
+/// Statistics data - comprehensive structure matching Ably API
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats {
-    pub interval_id: String,
-    pub unit: String,
     #[serde(default)]
-    pub processed: bool,
+    pub interval_id: Option<String>,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub processed: Option<bool>,
+    #[serde(default)]
+    pub in_progress: Option<serde_json::Value>,
     #[serde(default)]
     pub channels: Option<StatsChannelData>,
+    #[serde(default)]
+    pub api_requests: Option<serde_json::Value>,
     #[serde(default)]
     pub all: Option<StatsMessageTypes>,
     #[serde(default)]
@@ -541,8 +547,10 @@ pub struct StatsMessageTypes {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatsMessageCount {
-    pub count: u64,
-    pub data: u64,
+    #[serde(default)]
+    pub count: Option<u64>,
+    #[serde(default)]
+    pub data: Option<u64>,
     #[serde(default)]
     pub uncompressed_data: Option<u64>,
     #[serde(default)]
@@ -553,7 +561,11 @@ pub struct StatsMessageCount {
 
 #[derive(Debug, Deserialize)]
 pub struct StatsMessageTraffic {
+    #[serde(default)]
+    pub all: Option<StatsMessageTypes>,
+    #[serde(default)]
     pub realtime: Option<StatsMessageTypes>,
+    #[serde(default)]
     pub rest: Option<StatsMessageTypes>,
 }
 
