@@ -5,13 +5,13 @@ use crate::auth::AuthMode;
 use crate::error::{AblyError, AblyResult};
 use crate::protocol::messages::{ProtocolMessage, Action};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, WebSocketStream, MaybeTlsStream};
+use tokio_tungstenite::tungstenite::http::Request;
 use tokio::net::TcpStream;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
-use serde::{Serialize, Deserialize};
-use serde_repr::{Serialize_repr, Deserialize_repr};
 use tracing::{debug, info, warn, error};
+use base64::Engine;
 
 pub use self::config::TransportConfig;
 pub use self::resilience::{ReconnectManager, HeartbeatManager, MessageQueue, ConnectionStats};
@@ -83,10 +83,24 @@ impl WebSocketTransport {
         let ws_url = self.build_ws_url()?;
         info!("Connecting to WebSocket: {}", ws_url);
 
-        // Connect to WebSocket
-        match connect_async(&ws_url).await {
-            Ok((ws_stream, _response)) => {
-                info!("WebSocket connected successfully");
+        // Create HTTP request with headers for WebSocket upgrade
+        let request = Request::builder()
+            .uri(ws_url.clone())
+            .header("User-Agent", "ably-rust/0.1.0")
+            .header("X-Ably-Version", "1.2")
+            .header("X-Ably-Lib", "rust-0.1.0")
+            .header("Host", "realtime.ably.io")
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Key", generate_websocket_key())
+            .header("Sec-WebSocket-Version", "13")
+            .body(())
+            .map_err(|e| AblyError::connection_failed(format!("Failed to build request: {}", e)))?;
+
+        // Connect to WebSocket with custom request
+        match connect_async(request).await {
+            Ok((ws_stream, response)) => {
+                info!("WebSocket connected successfully. Response: {:?}", response.status());
                 
                 let mut stream_guard = self.ws_stream.write().await;
                 *stream_guard = Some(ws_stream);
@@ -179,16 +193,15 @@ impl WebSocketTransport {
     fn build_ws_url(&self) -> AblyResult<String> {
         let mut url = self.url.clone();
         
-        // Add protocol version - Ably uses v=1.2 for WebSocket
+        // Add protocol version - Try v=1.2
         url.push_str("?v=1.2");
         
         // Add authentication
         match &self.auth_mode {
             AuthMode::ApiKey(key) => {
+                // Don't URL encode the API key - Ably handles it
                 url.push_str("&key=");
-                // URL encode the API key (replace : with %3A)
-                let encoded_key = key.replace(":", "%3A");
-                url.push_str(&encoded_key);
+                url.push_str(key);
             }
             AuthMode::Token(token) => {
                 url.push_str("&access_token=");
@@ -202,6 +215,12 @@ impl WebSocketTransport {
         } else {
             url.push_str("&format=json");
         }
+        
+        // Add echo for self-messages
+        url.push_str("&echo=true");
+        
+        // Add heartbeats
+        url.push_str("&heartbeats=true");
         
         println!("DEBUG: WebSocket URL: {}", url);
         Ok(url)
@@ -263,4 +282,12 @@ impl WebSocketTransport {
             }
         });
     }
+}
+
+/// Generate a random WebSocket key for the handshake
+fn generate_websocket_key() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let bytes: [u8; 16] = rng.gen();
+    base64::engine::general_purpose::STANDARD.encode(&bytes)
 }
