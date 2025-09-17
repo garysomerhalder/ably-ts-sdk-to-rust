@@ -18,6 +18,7 @@ pub struct RealtimeClient {
     channels: Arc<RwLock<HashMap<String, RealtimeChannel>>>,
     message_tx: mpsc::Sender<ProtocolMessage>,
     message_rx: Arc<RwLock<mpsc::Receiver<ProtocolMessage>>>,
+    msg_serial: Arc<RwLock<i64>>,
 }
 
 impl RealtimeClient {
@@ -29,6 +30,13 @@ impl RealtimeClient {
         let transport = WebSocketTransport::new(url, config, auth);
         
         let state_machine = Arc::new(ConnectionStateMachine::new());
+        
+        // Start state machine event processor
+        let sm_clone = state_machine.clone();
+        tokio::spawn(async move {
+            sm_clone.process_events().await;
+        });
+        
         let channels = Arc::new(RwLock::new(HashMap::new()));
         let (message_tx, message_rx) = mpsc::channel(100);
         
@@ -38,6 +46,7 @@ impl RealtimeClient {
             channels,
             message_tx,
             message_rx: Arc::new(RwLock::new(message_rx)),
+            msg_serial: Arc::new(RwLock::new(0)),
         };
         
         Ok(client)
@@ -56,8 +65,16 @@ impl RealtimeClient {
         // Start message processing loop
         self.start_message_processor();
         
-        // Update state
-        self.state_machine.send_event(ConnectionEvent::Connected("temp-id".to_string())).await?;
+        // Wait for CONNECTED message from server
+        let timeout = std::time::Duration::from_secs(10);
+        let start = std::time::Instant::now();
+        
+        while !self.is_connected().await {
+            if start.elapsed() > timeout {
+                return Err(AblyError::connection_failed("Timeout waiting for CONNECTED message"));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
         
         info!("Connected to Ably realtime");
         Ok(())
@@ -69,7 +86,19 @@ impl RealtimeClient {
         
         self.state_machine.send_event(ConnectionEvent::Disconnect).await?;
         self.transport.disconnect().await?;
-        self.state_machine.send_event(ConnectionEvent::Disconnected(None)).await?;
+        
+        // Wait for disconnection to complete
+        let timeout = std::time::Duration::from_secs(5);
+        let start = std::time::Instant::now();
+        
+        while self.is_connected().await {
+            if start.elapsed() > timeout {
+                // Force disconnection state if timeout
+                self.state_machine.send_event(ConnectionEvent::Disconnected(None)).await?;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
         
         info!("Disconnected from Ably realtime");
         Ok(())
@@ -86,6 +115,7 @@ impl RealtimeClient {
                     name.clone(),
                     self.transport.clone(),
                     self.state_machine.clone(),
+                    self.msg_serial.clone(),
                 )
             })
             .clone()
@@ -99,6 +129,11 @@ impl RealtimeClient {
     /// Check if connected
     pub async fn is_connected(&self) -> bool {
         matches!(self.state().await, ConnectionState::Connected)
+    }
+    
+    /// Get connection ID if connected
+    pub async fn connection_id(&self) -> Option<String> {
+        self.state_machine.connection_id().await
     }
     
     /// Start background message processor
@@ -117,7 +152,13 @@ impl RealtimeClient {
                         // Process message based on action
                         match message.action {
                             Action::Connected => {
-                                let _ = state_machine.send_event(ConnectionEvent::Connected("temp".to_string())).await;
+                                // Extract connection ID from message
+                                let connection_id = message.connection_id.clone()
+                                    .or_else(|| message.connection_details.as_ref()
+                                        .and_then(|d| d.connection_key.clone()))
+                                    .unwrap_or_else(|| "unknown".to_string());
+                                    
+                                let _ = state_machine.send_event(ConnectionEvent::Connected(connection_id)).await;
                             }
                             Action::Disconnected => {
                                 let _ = state_machine.send_event(ConnectionEvent::Disconnected(None)).await;
@@ -179,6 +220,7 @@ pub struct RealtimeChannel {
     state_machine: Arc<ConnectionStateMachine>,
     message_handlers: Arc<RwLock<Vec<MessageHandler>>>,
     presence_handlers: Arc<RwLock<Vec<PresenceHandler>>>,
+    msg_serial: Arc<RwLock<i64>>,
 }
 
 type MessageHandler = Arc<dyn Fn(Message) + Send + Sync>;
@@ -189,6 +231,7 @@ impl RealtimeChannel {
         name: String,
         transport: Arc<WebSocketTransport>,
         state_machine: Arc<ConnectionStateMachine>,
+        msg_serial: Arc<RwLock<i64>>,
     ) -> Self {
         Self {
             name,
@@ -196,6 +239,7 @@ impl RealtimeChannel {
             state_machine,
             message_handlers: Arc::new(RwLock::new(Vec::new())),
             presence_handlers: Arc::new(RwLock::new(Vec::new())),
+            msg_serial,
         }
     }
     
@@ -236,10 +280,17 @@ impl RealtimeChannel {
     
     /// Publish a message to the channel
     pub async fn publish(&self, message: Message) -> AblyResult<()> {
+        // Increment and get message serial
+        let mut serial = self.msg_serial.write().await;
+        *serial += 1;
+        let current_serial = *serial;
+        drop(serial);
+        
         let protocol_message = ProtocolMessage {
             action: Action::Message,
             channel: Some(self.name.clone()),
             messages: Some(vec![message]),
+            msg_serial: Some(current_serial),
             ..Default::default()
         };
         
@@ -247,8 +298,26 @@ impl RealtimeChannel {
         Ok(())
     }
     
-    /// Subscribe to messages
-    pub async fn subscribe<F>(&self, handler: F) 
+    /// Subscribe to messages (returns a receiver for the messages)
+    pub async fn subscribe(&self) -> mpsc::Receiver<Message> {
+        let (tx, rx) = mpsc::channel(100);
+        let tx = Arc::new(tx);
+        
+        let handler: MessageHandler = Arc::new(move |msg: Message| {
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let _ = tx.send(msg).await;
+            });
+        });
+        
+        let mut handlers = self.message_handlers.write().await;
+        handlers.push(handler);
+        
+        rx
+    }
+    
+    /// Subscribe to messages with handler function
+    pub async fn subscribe_with_handler<F>(&self, handler: F) 
     where
         F: Fn(Message) + Send + Sync + 'static,
     {
@@ -273,6 +342,12 @@ impl RealtimeChannel {
     
     /// Enter presence
     pub async fn presence_enter(&self, data: Option<serde_json::Value>) -> AblyResult<()> {
+        // Increment and get message serial
+        let mut serial = self.msg_serial.write().await;
+        *serial += 1;
+        let current_serial = *serial;
+        drop(serial);
+        
         let presence_message = PresenceMessage {
             action: Some(PresenceAction::Enter),
             client_id: Some("rust-client".to_string()),
@@ -284,6 +359,7 @@ impl RealtimeChannel {
             action: Action::Presence,
             channel: Some(self.name.clone()),
             presence: Some(vec![presence_message]),
+            msg_serial: Some(current_serial),
             ..Default::default()
         };
         
@@ -293,6 +369,12 @@ impl RealtimeChannel {
     
     /// Leave presence
     pub async fn presence_leave(&self) -> AblyResult<()> {
+        // Increment and get message serial
+        let mut serial = self.msg_serial.write().await;
+        *serial += 1;
+        let current_serial = *serial;
+        drop(serial);
+        
         let presence_message = PresenceMessage {
             action: Some(PresenceAction::Leave),
             client_id: Some("rust-client".to_string()),
@@ -303,6 +385,7 @@ impl RealtimeChannel {
             action: Action::Presence,
             channel: Some(self.name.clone()),
             presence: Some(vec![presence_message]),
+            msg_serial: Some(current_serial),
             ..Default::default()
         };
         

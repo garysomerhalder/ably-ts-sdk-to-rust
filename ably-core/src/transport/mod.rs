@@ -142,6 +142,11 @@ impl WebSocketTransport {
     pub async fn state(&self) -> TransportState {
         *self.state.read().await
     }
+    
+    /// Get connection ID if connected
+    pub async fn connection_id(&self) -> Option<String> {
+        self.connection_id.read().await.clone()
+    }
 
     /// Send a protocol message
     pub async fn send_message(&self, message: ProtocolMessage) -> AblyResult<()> {
@@ -216,7 +221,7 @@ impl WebSocketTransport {
         //     url.push_str("&format=json");
         // }
         
-        println!("DEBUG: WebSocket URL: {}", url);
+        debug!("WebSocket URL: {}", url);
         Ok(url)
     }
 

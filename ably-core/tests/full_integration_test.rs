@@ -6,6 +6,7 @@ use ably_core::client::realtime::RealtimeClient;
 use ably_core::protocol::messages::{Message, Action};
 use std::time::Duration;
 use tokio::time::sleep;
+use serde_json;
 
 #[tokio::test]
 async fn test_full_websocket_lifecycle() {
@@ -31,53 +32,33 @@ async fn test_full_websocket_lifecycle() {
     
     // Create a channel
     println!("\n3️⃣ Creating channel 'test-channel'...");
-    let channel = client.channel("test-channel");
+    let channel = client.channel("test-channel").await;
     
     // Attach to the channel
     println!("4️⃣ Attaching to channel...");
     channel.attach().await.expect("Failed to attach to channel");
     sleep(Duration::from_secs(1)).await;
     
+    // Subscribe to messages first
+    println!("5️⃣ Subscribing to messages...");
+    let mut subscription = channel.subscribe().await;
+    
     // Publish a message
-    println!("5️⃣ Publishing message...");
-    let message = Message {
-        name: Some("test".to_string()),
-        data: Some(serde_json::json!("Hello from Rust SDK!")),
-        id: None,
-        client_id: None,
-        connection_id: None,
-        encoding: None,
-        timestamp: None,
-        extras: None,
-    };
+    println!("6️⃣ Publishing message...");
+    let mut message = Message::default();
+    message.name = Some("test".to_string());
+    message.data = Some(serde_json::json!("Hello from Rust"));
     
     channel.publish(message).await.expect("Failed to publish message");
     println!("   ✅ Message published");
-    
-    // Subscribe to messages
-    println!("6️⃣ Subscribing to messages...");
-    let mut subscription = channel.subscribe().await;
-    
-    // Publish another message to receive
-    let test_message = Message {
-        name: Some("echo".to_string()),
-        data: Some(serde_json::json!("Echo test")),
-        id: None,
-        client_id: None,
-        connection_id: None,
-        encoding: None,
-        timestamp: None,
-        extras: None,
-    };
-    
-    channel.publish(test_message).await.expect("Failed to publish echo");
     
     // Wait for message
     println!("7️⃣ Waiting for message...");
     tokio::select! {
         Some(msg) = subscription.recv() => {
             println!("   ✅ Received message: {:?}", msg.name);
-            assert_eq!(msg.name, Some("echo".to_string()));
+            // Ably echoes back the message we published
+            assert_eq!(msg.name, Some("test".to_string()));
         }
         _ = sleep(Duration::from_secs(5)) => {
             panic!("Timeout waiting for message");
@@ -180,9 +161,9 @@ async fn test_concurrent_channels() {
     sleep(Duration::from_secs(1)).await;
     
     // Create multiple channels
-    let channel1 = client.channel("channel-1");
-    let channel2 = client.channel("channel-2");
-    let channel3 = client.channel("channel-3");
+    let channel1 = client.channel("channel-1").await;
+    let channel2 = client.channel("channel-2").await;
+    let channel3 = client.channel("channel-3").await;
     
     println!("1️⃣ Attaching to 3 channels concurrently...");
     
@@ -202,16 +183,9 @@ async fn test_concurrent_channels() {
     // Publish to all channels
     println!("2️⃣ Publishing to all channels...");
     
-    let msg = Message {
-        name: Some("concurrent-test".to_string()),
-        data: Some(serde_json::json!("Testing concurrent channels")),
-        id: None,
-        client_id: None,
-        connection_id: None,
-        encoding: None,
-        timestamp: None,
-        extras: None,
-    };
+    let mut msg = Message::default();
+    msg.name = Some("test".to_string());
+    msg.data = Some(serde_json::json!("concurrent test"));
     
     let (p1, p2, p3) = tokio::join!(
         channel1.publish(msg.clone()),
