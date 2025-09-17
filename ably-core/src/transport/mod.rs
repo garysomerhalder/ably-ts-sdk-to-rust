@@ -19,6 +19,11 @@ pub use self::resilience::{ReconnectManager, HeartbeatManager, MessageQueue, Con
 mod config;
 mod resilience;
 
+// Re-export WebSocket transport for easier access
+pub mod websocket {
+    pub use super::WebSocketTransport;
+}
+
 /// Transport state
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TransportState {
@@ -58,6 +63,14 @@ impl WebSocketTransport {
             message_tx: tx,
             message_rx: Arc::new(RwLock::new(rx)),
         }
+    }
+    
+    /// Create WebSocket transport with default configuration for API key auth
+    pub fn with_api_key(api_key: &str) -> Self {
+        let url = "wss://realtime.ably.io";
+        let config = TransportConfig::default();
+        let auth_mode = AuthMode::ApiKey(api_key.to_string());
+        Self::new(url, config, auth_mode)
     }
 
     /// Connect to Ably WebSocket endpoint
@@ -144,6 +157,19 @@ impl WebSocketTransport {
         }
     }
 
+    /// Send a protocol message (alias for send_message)
+    pub async fn send(&self, message: ProtocolMessage) -> AblyResult<()> {
+        self.send_message(message).await
+    }
+    
+    /// Receive a protocol message (returns Option for compatibility)
+    pub async fn receive(&self) -> AblyResult<Option<ProtocolMessage>> {
+        match self.receive_message().await {
+            Ok(msg) => Ok(Some(msg)),
+            Err(_) => Ok(None),
+        }
+    }
+    
     /// Check if using binary protocol
     pub fn is_binary_protocol(&self) -> bool {
         self.config.use_binary_protocol
