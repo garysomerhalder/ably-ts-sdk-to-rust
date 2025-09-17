@@ -25,7 +25,7 @@ impl RealtimeClient {
     pub async fn new(api_key: impl Into<String>) -> AblyResult<Self> {
         let config = TransportConfig::default();
         let auth = AuthMode::ApiKey(api_key.into());
-        let url = "wss://realtime.ably.io";
+        let url = "wss://realtime.ably.io/"; // Trailing slash is REQUIRED!
         let transport = WebSocketTransport::new(url, config, auth);
         
         let state_machine = Arc::new(ConnectionStateMachine::new());

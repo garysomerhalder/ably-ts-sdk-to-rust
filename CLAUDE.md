@@ -112,9 +112,11 @@ ably-core/src/
    - Channel metadata responses need alignment
 
 3. **WebSocket Connection**:
-   - URL: `wss://realtime.ably.io?key={key}&v=3&format=json`
+   - **CRITICAL:** URL must have trailing slash! `wss://realtime.ably.io/?key={key}&v=1.2&format=json`
+   - Without trailing slash, CloudFront CDN returns 400 error
    - Must handle token refresh on reconnect
    - Heartbeat required every 15 seconds
+   - Connection established in ~150ms
 
 4. **Encryption**:
    - Messages encrypted with channel-specific cipher params
