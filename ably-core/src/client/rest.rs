@@ -504,28 +504,57 @@ impl<'a> StatsQuery<'a> {
 
 /// Statistics data
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Stats {
-    pub all: StatsMessageTypes,
+    pub interval_id: String,
+    pub unit: String,
+    #[serde(default)]
+    pub processed: bool,
+    #[serde(default)]
+    pub channels: Option<StatsChannelData>,
+    #[serde(default)]
+    pub all: Option<StatsMessageTypes>,
+    #[serde(default)]
     pub inbound: Option<StatsMessageTraffic>,
+    #[serde(default)]
     pub outbound: Option<StatsMessageTraffic>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct StatsMessageTypes {
-    pub messages: StatsMessageCount,
-    pub presence: StatsMessageCount,
+#[serde(rename_all = "camelCase")]
+pub struct StatsChannelData {
+    pub count: Option<u64>,
+    pub mean_data: Option<f64>,
+    pub mean_rate: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
+pub struct StatsMessageTypes {
+    #[serde(default)]
+    pub all: Option<StatsMessageCount>,
+    #[serde(default)]
+    pub messages: Option<StatsMessageCount>,
+    #[serde(default)]
+    pub presence: Option<StatsMessageCount>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatsMessageCount {
     pub count: u64,
     pub data: u64,
+    #[serde(default)]
+    pub uncompressed_data: Option<u64>,
+    #[serde(default)]
+    pub billable_count: Option<u64>,
+    #[serde(default)]
+    pub category: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct StatsMessageTraffic {
-    pub realtime: StatsMessageTypes,
-    pub rest: StatsMessageTypes,
+    pub realtime: Option<StatsMessageTypes>,
+    pub rest: Option<StatsMessageTypes>,
 }
 
 /// Channels metadata query
