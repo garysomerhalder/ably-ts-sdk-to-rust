@@ -26,7 +26,7 @@ async fn test_websocket_connection_to_ably() {
             assert_eq!(msg.action, Action::Connected, "First message should be CONNECTED");
             
             if let Some(details) = msg.connection_details {
-                println!("      Connection ID: {:?}", details.connection_id);
+                println!("      Connection key: {:?}", details.connection_key);
                 println!("      Max message size: {:?}", details.max_message_size);
             }
         },

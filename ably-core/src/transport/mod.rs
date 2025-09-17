@@ -179,14 +179,16 @@ impl WebSocketTransport {
     fn build_ws_url(&self) -> AblyResult<String> {
         let mut url = self.url.clone();
         
-        // Add protocol version
-        url.push_str("?v=3");
+        // Add protocol version - Ably uses v=1.2 for WebSocket
+        url.push_str("?v=1.2");
         
         // Add authentication
         match &self.auth_mode {
             AuthMode::ApiKey(key) => {
                 url.push_str("&key=");
-                url.push_str(key);
+                // URL encode the API key (replace : with %3A)
+                let encoded_key = key.replace(":", "%3A");
+                url.push_str(&encoded_key);
             }
             AuthMode::Token(token) => {
                 url.push_str("&access_token=");
@@ -201,6 +203,7 @@ impl WebSocketTransport {
             url.push_str("&format=json");
         }
         
+        println!("DEBUG: WebSocket URL: {}", url);
         Ok(url)
     }
 
