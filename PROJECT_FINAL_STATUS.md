@@ -44,10 +44,16 @@
 
 ### WebSocket Connection (60% Complete)
 - ❌ 400 Bad Request error when connecting
-- Tried protocol versions: v=3, v=2, v=1.2
-- URL format appears correct
-- May need additional headers or parameters
-- **Needs further investigation**
+- **Attempted Solutions:**
+  - Tried protocol versions: v=3, v=2, v=1.2
+  - Added custom headers: User-Agent, X-Ably-Version, X-Ably-Lib
+  - Tested with URL-encoded API key (colon as %3A)
+  - Tested without URL encoding
+  - Removed optional parameters (echo, heartbeats, format)
+  - Used custom HTTP request builder with proper WebSocket headers
+- **Current WebSocket URL format:**
+  - `wss://realtime.ably.io?v=1.2&key=BGkZHw.WUtzEQ:wpBCK6EsoasbyGyFNefocFYi7ESjkFlyZ8Yh-sh0PIA`
+- **Hypothesis:** May need token authentication instead of API key for WebSocket
 
 ### Remaining Work
 - Token refresh mechanism for reconnection

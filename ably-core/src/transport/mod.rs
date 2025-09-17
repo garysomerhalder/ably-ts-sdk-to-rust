@@ -209,18 +209,12 @@ impl WebSocketTransport {
             }
         }
         
-        // Add format
-        if self.config.use_binary_protocol {
-            url.push_str("&format=msgpack");
-        } else {
-            url.push_str("&format=json");
-        }
-        
-        // Add echo for self-messages
-        url.push_str("&echo=true");
-        
-        // Add heartbeats
-        url.push_str("&heartbeats=true");
+        // Format is json by default, don't specify it
+        // if self.config.use_binary_protocol {
+        //     url.push_str("&format=msgpack");
+        // } else {
+        //     url.push_str("&format=json");
+        // }
         
         println!("DEBUG: WebSocket URL: {}", url);
         Ok(url)
