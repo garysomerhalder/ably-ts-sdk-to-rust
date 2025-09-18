@@ -14,6 +14,7 @@
 | 3. Core | 12 | 🟢 Complete | 12/12 (All CORE tasks ✅) |
 | 4. Features | 10 | 🟢 Complete | 10/10 (All FEAT tasks ✅) |
 | 5. Bindings | 5 | 🟢 Complete | 5/5 (All BIND tasks ✅) |
+| 6. Production Ready | 10 | 🔴 Critical | 0/10 (BLOCKING RELEASE) |
 
 ## 🚦 Current Sprint Tasks
 
@@ -67,12 +68,26 @@
 - [x] 🟢 BIND-004: TypeScript definitions [COMPLETE]
 - [x] 🟢 BIND-005: Package and publish [COMPLETE]
 
+### 🚨 Production Readiness (Week 17-19) - CRITICAL PATH
+- [ ] 🔴 PROD-001: Fix JSON parsing for stats/history endpoints [HIGH PRIORITY]
+- [ ] 🔴 PROD-002: Implement WebSocket token refresh mechanism [HIGH PRIORITY]
+- [ ] 🔴 PROD-003: Complete protocol handlers (SYNC, AUTH, ACTIVATE) [HIGH PRIORITY]
+- [ ] 🔴 PROD-004: Implement realtime presence operations (enter/leave/update) [HIGH PRIORITY]
+- [ ] 🔴 PROD-005: Set up GitHub Actions CI/CD pipeline [CRITICAL]
+- [ ] 🔴 PROD-006: Fix REST pagination Link header parsing [MEDIUM]
+- [ ] 🔴 PROD-007: Generate TypeScript definitions for bindings [MEDIUM]
+- [ ] 🔴 PROD-008: Create migration guide from JS SDK [MEDIUM]
+- [ ] 🔴 PROD-009: Add connection recovery with exponential backoff [MEDIUM]
+- [ ] 🔴 PROD-010: Implement performance benchmarking suite [LOW]
+
 ## 📈 Progress Metrics
-- **Total Tasks**: 40
-- **Completed**: 40 (All phases complete)
+- **Total Tasks**: 50
+- **Completed**: 40 (Phases 1-5 complete)
 - **In Progress**: 0
+- **TODO**: 10 (Production readiness tasks)
 - **Blocked**: 0
-- **Completion**: 100% (40/40)
+- **Tracker Completion**: 80% (40/50)
+- **ACTUAL SDK Completion**: 85% (from 9-agent analysis)
 
 ## 🔗 Dependencies
 - Ably API credentials required (store in /reference/)
@@ -83,3 +98,5 @@
 - All tasks follow Traffic-Light Development (Red→Yellow→Green)
 - Integration tests against real Ably services only
 - Maintain API compatibility with ably-js v2.12.0
+- **CRITICAL UPDATE (Jan 18, 2025)**: 9-agent analysis revealed 85% actual completion vs 100% tracker status
+- **Production blockers identified**: JSON parsing, token refresh, protocol handlers missing
