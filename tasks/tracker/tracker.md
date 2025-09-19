@@ -10,7 +10,7 @@
 | Phase | Tasks | Status | Progress |
 |-------|-------|--------|----------|
 | 1. Foundation | 5 | 🟢 Complete | 5/5 (All FOUND tasks ✅) |
-| 2. Infrastructure | 8 | 🟡 In Progress | 5/8 |
+| 2. Infrastructure | 8 | 🟢 Complete | 8/8 |
 | 3. Core | 12 | 🔴 Not Started | 0/12 |
 | 4. Features | 10 | 🔴 Not Started | 0/10 |
 | 5. Bindings | 5 | 🔴 Not Started | 0/5 |
@@ -32,7 +32,7 @@
 - [x] 🟢 INFRA-005: Implement API key authentication [COMPLETE - in HTTP client]
 - [x] 🟢 INFRA-006: Implement JWT token authentication [COMPLETE - JWT with HMAC-SHA256]
 - [x] 🟢 INFRA-007: Add token renewal mechanism [COMPLETE - TokenRenewalHandler]
-- [ ] 🟡 INFRA-008: Create integration test harness [IN_PROGRESS]
+- [x] 🟢 INFRA-008: Create integration test harness [COMPLETE - comprehensive test suite]
 
 ### Core (Week 5-8)
 - [ ] 🔴 CORE-001: Define ProtocolMessage structures
@@ -69,10 +69,10 @@
 
 ## 📈 Progress Metrics
 - **Total Tasks**: 40
-- **Completed**: 10 (Foundation: 5, Infrastructure: 5)
-- **In Progress**: 3 (Infrastructure remaining)
+- **Completed**: 13 (Foundation: 5, Infrastructure: 8)
+- **In Progress**: 0
 - **Blocked**: 0
-- **Completion**: 25% (10/40)
+- **Completion**: 32.5% (13/40)
 
 ## 🔗 Dependencies
 - Ably API credentials required (store in /reference/)

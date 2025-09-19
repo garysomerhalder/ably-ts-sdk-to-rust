@@ -7,5 +7,7 @@ pub mod encoding;
 // Re-export key types
 pub use messages::{
     ProtocolMessage, Action, Message, PresenceMessage, PresenceAction,
-    ErrorInfo, AuthDetails, ConnectionDetails, flags
+    ErrorInfo, AuthDetails, ConnectionDetails, flags,
+    MessageFlags, ChannelDetails, ChannelStatus, ChannelOccupancy,
+    ChannelMetrics, MessageData
 };

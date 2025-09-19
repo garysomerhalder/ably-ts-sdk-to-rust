@@ -76,14 +76,14 @@ pub enum Action {
     Attached = 11,
     Detach = 12,
     Detached = 13,
-    Presence = 14,
-    Message = 15,
+    Message = 14,
+    Presence = 15,
     Sync = 16,
     Auth = 17,
     Activate = 18,
-    Object = 19,
-    ObjectSync = 20,
-    Annotation = 21,
+    MessageAck = 19,
+    PresenceAck = 20,
+    PushAdmin = 21,
 }
 
 /// Message structure
@@ -178,16 +178,19 @@ pub enum PresenceAction {
 pub struct ErrorInfo {
     #[serde(default)]
     pub code: u16,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_code: Option<u16>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
-    
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<Box<ErrorInfo>>,
 }
@@ -238,6 +241,77 @@ pub mod flags {
     pub const TRANSIENT: u32 = 1 << 19;
     pub const ATTACH_RESUME: u32 = 1 << 20;
 }
+
+/// Message flags enum for type safety
+pub enum MessageFlags {
+    PRESENCE = 1,
+    PUBLISH = 2,
+    SUBSCRIBE = 4,
+    PRESENCE_SUBSCRIBE = 8,
+    HAS_PRESENCE = 16,
+    HAS_BACKLOG = 32,
+    RESUMED = 64,
+    TRANSIENT = 256,
+    ATTACH_RESUME = 512,
+}
+
+/// Channel details structure
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelDetails {
+    pub channel: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_serial: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ChannelStatus>,
+}
+
+/// Channel status information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_active: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub occupancy: Option<ChannelOccupancy>,
+}
+
+/// Channel occupancy metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelOccupancy {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<ChannelMetrics>,
+}
+
+/// Channel metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelMetrics {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connections: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_connections: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_members: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_subscribers: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publishers: Option<i64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscribers: Option<i64>,
+}
+
+/// Type alias for MessageData (same as Message)
+pub type MessageData = Message;
 
 impl ProtocolMessage {
     /// Create a connect message
