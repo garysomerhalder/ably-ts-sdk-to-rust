@@ -9,7 +9,9 @@ use tokio_tungstenite::tungstenite::http::Request;
 use tokio::net::TcpStream;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{RwLock, mpsc};
+use tokio::time::{interval, timeout, Duration};
 use tracing::{debug, info, warn, error};
 use base64::Engine;
 
@@ -46,13 +48,16 @@ pub struct WebSocketTransport {
     ws_stream: Arc<RwLock<Option<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
     message_tx: mpsc::UnboundedSender<ProtocolMessage>,
     message_rx: Arc<RwLock<mpsc::UnboundedReceiver<ProtocolMessage>>>,
+    is_running: Arc<AtomicBool>,
+    last_activity: Arc<RwLock<std::time::Instant>>,
+    reconnect_attempts: Arc<RwLock<u32>>,
 }
 
 impl WebSocketTransport {
     /// Create new WebSocket transport
     pub fn new(url: &str, config: TransportConfig, auth_mode: AuthMode) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
-        
+
         Self {
             url: url.to_string(),
             config,
@@ -62,12 +67,15 @@ impl WebSocketTransport {
             ws_stream: Arc::new(RwLock::new(None)),
             message_tx: tx,
             message_rx: Arc::new(RwLock::new(rx)),
+            is_running: Arc::new(AtomicBool::new(false)),
+            last_activity: Arc::new(RwLock::new(std::time::Instant::now())),
+            reconnect_attempts: Arc::new(RwLock::new(0)),
         }
     }
     
     /// Create WebSocket transport with default configuration for API key auth
     pub fn with_api_key(api_key: &str) -> Self {
-        let url = "wss://realtime.ably.io/"; // CRITICAL: Trailing slash is REQUIRED!
+        let url = "wss://realtime.ably.io"; // Base URL without trailing slash
         let config = TransportConfig::default();
         let auth_mode = AuthMode::ApiKey(api_key.to_string());
         Self::new(url, config, auth_mode)
@@ -112,6 +120,7 @@ impl WebSocketTransport {
 
                 // Start message handling loop
                 self.start_message_loop().await;
+                self.start_heartbeat().await;
 
                 Ok(())
             }
@@ -126,6 +135,8 @@ impl WebSocketTransport {
 
     /// Disconnect from WebSocket
     pub async fn disconnect(&self) -> AblyResult<()> {
+        self.is_running.store(false, Ordering::SeqCst);
+
         let mut state = self.state.write().await;
         *state = TransportState::Disconnected;
         drop(state);
@@ -197,8 +208,13 @@ impl WebSocketTransport {
     /// Build WebSocket URL with authentication
     fn build_ws_url(&self) -> AblyResult<String> {
         let mut url = self.url.clone();
-        
-        // Add protocol version - Try v=1.2
+
+        // CRITICAL: Ably requires trailing slash before query params!
+        if !url.ends_with('/') {
+            url.push('/');
+        }
+
+        // Add protocol version
         url.push_str("?v=1.2");
         
         // Add authentication
@@ -214,12 +230,12 @@ impl WebSocketTransport {
             }
         }
         
-        // Format is json by default, don't specify it
-        // if self.config.use_binary_protocol {
-        //     url.push_str("&format=msgpack");
-        // } else {
-        //     url.push_str("&format=json");
-        // }
+        // Add format explicitly
+        if self.config.use_binary_protocol {
+            url.push_str("&format=msgpack");
+        } else {
+            url.push_str("&format=json");
+        }
         
         debug!("WebSocket URL: {}", url);
         Ok(url)
@@ -280,6 +296,114 @@ impl WebSocketTransport {
                 }
             }
         });
+    }
+
+    /// Send a heartbeat message
+    pub async fn send_heartbeat(&self) -> AblyResult<()> {
+        let heartbeat = ProtocolMessage::heartbeat();
+        self.send_message(heartbeat).await
+    }
+
+    /// Start heartbeat mechanism
+    async fn start_heartbeat(&self) {
+        let ws_stream = Arc::clone(&self.ws_stream);
+        let state = Arc::clone(&self.state);
+        let is_running = Arc::clone(&self.is_running);
+        let last_activity = Arc::clone(&self.last_activity);
+        let interval_duration = self.config.keepalive_interval;
+
+        self.is_running.store(true, Ordering::SeqCst);
+
+        tokio::spawn(async move {
+            let mut heartbeat_timer = interval(interval_duration);
+            heartbeat_timer.tick().await; // Skip first immediate tick
+
+            while is_running.load(Ordering::SeqCst) {
+                heartbeat_timer.tick().await;
+
+                let current_state = *state.read().await;
+                if current_state != TransportState::Connected {
+                    continue;
+                }
+
+                // Check if we need to send heartbeat
+                let last = *last_activity.read().await;
+                if last.elapsed() > interval_duration {
+                    // Send heartbeat
+                    let mut ws_guard = ws_stream.write().await;
+                    if let Some(ws) = ws_guard.as_mut() {
+                        let heartbeat_msg = serde_json::to_string(&ProtocolMessage::heartbeat())
+                            .unwrap_or_default();
+
+                        if let Err(e) = ws.send(Message::Text(heartbeat_msg)).await {
+                            error!("Failed to send heartbeat: {}", e);
+                            let mut state_guard = state.write().await;
+                            *state_guard = TransportState::Failed;
+                            break;
+                        } else {
+                            info!("Heartbeat sent");
+                            let mut activity = last_activity.write().await;
+                            *activity = std::time::Instant::now();
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /// Attempt to reconnect with exponential backoff
+    pub async fn reconnect(&self) -> AblyResult<()> {
+        let mut attempts = self.reconnect_attempts.write().await;
+        *attempts += 1;
+        let current_attempt = *attempts;
+        drop(attempts);
+
+        if current_attempt > 5 {
+            return Err(AblyError::connection_failed("Max reconnection attempts reached"));
+        }
+
+        // Exponential backoff
+        let delay = Duration::from_millis(100 * 2_u64.pow(current_attempt));
+        tokio::time::sleep(delay).await;
+
+        // Clear old connection
+        let mut ws_guard = self.ws_stream.write().await;
+        *ws_guard = None;
+        drop(ws_guard);
+
+        // Try to reconnect
+        match self.connect().await {
+            Ok(()) => {
+                let mut attempts = self.reconnect_attempts.write().await;
+                *attempts = 0;
+                info!("Reconnected successfully after {} attempts", current_attempt);
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Reconnection attempt {} failed: {}", current_attempt, e);
+                Err(e)
+            }
+        }
+    }
+
+    /// Gracefully close the connection
+    pub async fn close(&self) -> AblyResult<()> {
+        let mut state = self.state.write().await;
+        *state = TransportState::Closing;
+        drop(state);
+
+        self.is_running.store(false, Ordering::SeqCst);
+
+        // Send close frame
+        let mut ws_guard = self.ws_stream.write().await;
+        if let Some(mut ws) = ws_guard.take() {
+            let _ = ws.close(None).await;
+        }
+
+        let mut state = self.state.write().await;
+        *state = TransportState::Closed;
+
+        Ok(())
     }
 }
 

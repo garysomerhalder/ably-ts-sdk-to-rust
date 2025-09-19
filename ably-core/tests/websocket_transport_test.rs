@@ -18,7 +18,7 @@ async fn test_websocket_connection_to_ably_realtime() {
     let config = TransportConfig::default();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
@@ -35,7 +35,7 @@ async fn test_websocket_authentication_handshake() {
     let config = TransportConfig::default();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
@@ -61,7 +61,7 @@ async fn test_websocket_heartbeat_mechanism() {
     let config = TransportConfig::default();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
@@ -94,7 +94,7 @@ async fn test_websocket_reconnection_on_disconnect() {
         .build();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
@@ -120,7 +120,7 @@ async fn test_websocket_message_framing() {
     let config = TransportConfig::default();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
@@ -151,7 +151,7 @@ async fn test_websocket_binary_message_support() {
         .build();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
@@ -189,7 +189,7 @@ async fn test_websocket_max_frame_size() {
         .build();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
@@ -223,7 +223,7 @@ async fn test_websocket_ping_pong_keepalive() {
         .build();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
@@ -244,7 +244,7 @@ async fn test_websocket_graceful_shutdown() {
     let config = TransportConfig::default();
     
     let transport = WebSocketTransport::new(
-        "wss://sandbox-realtime.ably.io:443",
+        "wss://realtime.ably.io",
         config,
         AuthMode::ApiKey(api_key),
     );
