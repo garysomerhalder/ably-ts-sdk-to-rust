@@ -105,6 +105,14 @@ impl AblyError {
             retryable: true,
         }
     }
+
+    /// Create a channel failed error
+    pub fn channel_failed(message: impl Into<String>) -> Self {
+        Self::Api {
+            code: 40000,
+            message: message.into(),
+        }
+    }
     
     /// Create a network error
     pub fn network(message: impl Into<String>) -> Self {

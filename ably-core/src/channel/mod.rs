@@ -8,6 +8,8 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 use tracing::{info, warn, error};
 use std::collections::HashMap;
+use uuid::Uuid;
+use chrono::Utc;
 
 /// Channel states as per Ably specification
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -105,7 +107,7 @@ impl Channel {
         *self.state.read().await
     }
 
-    /// Attach to the channel
+    /// Attach to the channel with retry logic
     pub async fn attach(&self) -> AblyResult<()> {
         // Validate channel name
         if self.name.is_empty() {
@@ -125,28 +127,67 @@ impl Channel {
                 return Ok(());
             }
             ChannelState::Failed => {
-                return Err(AblyError::invalid_request("Cannot attach failed channel"));
+                // Attempt recovery from failed state
+                info!("Attempting to recover channel {} from failed state", self.name);
             }
             _ => {}
         }
 
-        // Update state to Attaching
+        // Retry logic for attach operation
+        let max_retries = 3;
+        let mut attempt = 0;
+        let mut last_error = None;
+
+        while attempt < max_retries {
+            attempt += 1;
+
+            // Update state to Attaching
+            let mut state = self.state.write().await;
+            *state = ChannelState::Attaching;
+            drop(state);
+
+            info!("Attaching to channel: {} (attempt {}/{})", self.name, attempt, max_retries);
+
+            // Send ATTACH protocol message
+            let attach_msg = ProtocolMessage::attach(self.name.clone(), self.build_attach_flags());
+
+            match self.transport.send_message(attach_msg).await {
+                Ok(_) => {
+                    // Wait for ATTACHED response
+                    match self.wait_for_state(ChannelState::Attached).await {
+                        Ok(_) => {
+                            info!("Successfully attached to channel: {}", self.name);
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            last_error = Some(e);
+                            if attempt < max_retries {
+                                warn!("Channel {} attach attempt {} failed, retrying...", self.name, attempt);
+                                tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt as u64)).await;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < max_retries {
+                        warn!("Failed to send attach message for channel {}, retrying...", self.name);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt as u64)).await;
+                    }
+                }
+            }
+        }
+
+        // All retries exhausted, set to failed state
         let mut state = self.state.write().await;
-        *state = ChannelState::Attaching;
+        *state = ChannelState::Failed;
         drop(state);
 
-        info!("Attaching to channel: {}", self.name);
-
-        // Send ATTACH protocol message
-        let attach_msg = ProtocolMessage::attach(self.name.clone(), self.build_attach_flags());
-
-        self.transport.send_message(attach_msg).await?;
-
-        // Wait for ATTACHED response
-        self.wait_for_state(ChannelState::Attached).await?;
-
-        info!("Successfully attached to channel: {}", self.name);
-        Ok(())
+        error!("Failed to attach to channel {} after {} attempts", self.name, max_retries);
+        Err(last_error.unwrap_or_else(|| AblyError::channel_failed(format!(
+            "Failed to attach to channel {} after {} attempts",
+            self.name, max_retries
+        ))))
     }
 
     /// Detach from the channel
@@ -186,7 +227,7 @@ impl Channel {
         Ok(())
     }
 
-    /// Publish a message to the channel
+    /// Publish a message to the channel with retry logic
     pub async fn publish(&self, name: &str, data: impl Into<String>) -> AblyResult<()> {
         // Auto-attach if not attached
         if self.state().await != ChannelState::Attached {
@@ -196,14 +237,42 @@ impl Channel {
         let message = Message {
             name: Some(name.to_string()),
             data: Some(serde_json::json!(data.into())),
+            id: Some(format!("msg:{}:{}", self.name, uuid::Uuid::new_v4())),
+            timestamp: Some(chrono::Utc::now().timestamp_millis()),
             ..Default::default()
         };
 
-        let publish_msg = ProtocolMessage::message(self.name.clone(), vec![message]);
+        let publish_msg = ProtocolMessage::message(self.name.clone(), vec![message.clone()]);
 
-        self.transport.send_message(publish_msg).await?;
+        // Retry logic for publish
+        let max_retries = 3;
+        let mut attempt = 0;
+        let mut last_error = None;
 
-        Ok(())
+        while attempt < max_retries {
+            attempt += 1;
+
+            match self.transport.send_message(publish_msg.clone()).await {
+                Ok(_) => {
+                    info!("Published message to channel {}", self.name);
+                    return Ok(());
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < max_retries {
+                        warn!("Failed to publish to channel {} (attempt {}/{}), retrying...",
+                              self.name, attempt, max_retries);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200 * attempt as u64)).await;
+                    }
+                }
+            }
+        }
+
+        error!("Failed to publish to channel {} after {} attempts", self.name, max_retries);
+        Err(last_error.unwrap_or_else(|| AblyError::network(format!(
+            "Failed to publish to channel {} after {} attempts",
+            self.name, max_retries
+        ))))
     }
 
     /// Subscribe to messages on this channel
@@ -320,24 +389,36 @@ impl Channel {
         Ok(())
     }
 
-    /// Wait for a specific channel state
+    /// Wait for a specific channel state with exponential backoff
     async fn wait_for_state(&self, target: ChannelState) -> AblyResult<()> {
         let timeout_duration = tokio::time::Duration::from_secs(10);
         let start = tokio::time::Instant::now();
+        let mut delay = tokio::time::Duration::from_millis(50);
 
         loop {
             if self.state().await == target {
                 return Ok(());
             }
 
-            if start.elapsed() > timeout_duration {
-                return Err(AblyError::timeout(format!(
-                    "Timeout waiting for channel state {:?}",
-                    target
+            // Check for failure state
+            if self.state().await == ChannelState::Failed {
+                return Err(AblyError::channel_failed(format!(
+                    "Channel {} entered failed state while waiting for {:?}",
+                    self.name, target
                 )));
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            if start.elapsed() > timeout_duration {
+                return Err(AblyError::timeout(format!(
+                    "Timeout waiting for channel {} to reach state {:?}",
+                    self.name, target
+                )));
+            }
+
+            tokio::time::sleep(delay).await;
+
+            // Exponential backoff with max delay of 1 second
+            delay = std::cmp::min(delay * 2, tokio::time::Duration::from_secs(1));
         }
     }
 
