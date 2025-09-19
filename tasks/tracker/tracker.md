@@ -25,7 +25,7 @@
 - [x] 🟢 FOUND-005: Set up logging and tracing [COMPLETE]
 
 ### Infrastructure (Week 3-4)
-- [ ] 🔴 INFRA-001: Implement HTTP client with reqwest [PLANNED - Task file ready]
+- [ ] 🟡 INFRA-001: Implement HTTP client with reqwest [IN_PROGRESS - Started: 2025-09-19]
 - [ ] 🔴 INFRA-002: Add retry logic with exponential backoff
 - [ ] 🔴 INFRA-003: Implement connection pooling
 - [ ] 🔴 INFRA-004: Create error types and handling
@@ -70,7 +70,7 @@
 ## 📈 Progress Metrics
 - **Total Tasks**: 40
 - **Completed**: 5 (All Foundation tasks complete)
-- **In Progress**: 0
+- **In Progress**: 1
 - **Blocked**: 0  
 - **Completion**: 12.5% (5/40)
 
