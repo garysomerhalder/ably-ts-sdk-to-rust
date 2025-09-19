@@ -4,6 +4,7 @@
 //! including REST and Realtime clients, authentication, and transport layers.
 
 pub mod auth;
+pub mod channel;
 pub mod client;
 pub mod connection;
 pub mod crypto;

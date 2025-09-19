@@ -2,20 +2,21 @@
 // WebSocket-based real-time client
 
 use crate::auth::AuthMode;
+use crate::channel::{Channel, ChannelManager, ChannelOptions};
 use crate::connection::state_machine::{ConnectionStateMachine, ConnectionState, ConnectionEvent};
 use crate::error::{AblyError, AblyResult};
 use crate::protocol::messages::{ProtocolMessage, Action, Message, PresenceMessage, ErrorInfo, PresenceAction};
 use crate::transport::{WebSocketTransport, TransportConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock, oneshot};
+use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, warn, error};
 
 /// Realtime client for WebSocket connections
 pub struct RealtimeClient {
     transport: Arc<WebSocketTransport>,
     state_machine: Arc<ConnectionStateMachine>,
-    channels: Arc<RwLock<HashMap<String, RealtimeChannel>>>,
+    channel_manager: Arc<ChannelManager>,
     message_tx: mpsc::Sender<ProtocolMessage>,
     message_rx: Arc<RwLock<mpsc::Receiver<ProtocolMessage>>>,
     msg_serial: Arc<RwLock<i64>>,
@@ -24,8 +25,18 @@ pub struct RealtimeClient {
 impl RealtimeClient {
     /// Create a new realtime client with API key
     pub async fn new(api_key: impl Into<String>) -> AblyResult<Self> {
+        Self::new_internal(api_key.into()).await
+    }
+
+    /// Create a new realtime client with API key (convenience method)
+    pub async fn with_api_key(api_key: impl Into<String>) -> Self {
+        Self::new_internal(api_key.into()).await.expect("Failed to create RealtimeClient")
+    }
+
+    /// Internal creation method
+    async fn new_internal(api_key: String) -> AblyResult<Self> {
         let config = TransportConfig::default();
-        let auth = AuthMode::ApiKey(api_key.into());
+        let auth = AuthMode::ApiKey(api_key);
         let url = "wss://realtime.ably.io/"; // Trailing slash is REQUIRED!
         let transport = WebSocketTransport::new(url, config, auth);
         
@@ -37,13 +48,14 @@ impl RealtimeClient {
             sm_clone.process_events().await;
         });
         
-        let channels = Arc::new(RwLock::new(HashMap::new()));
+        let transport_arc = Arc::new(transport);
+        let channel_manager = Arc::new(ChannelManager::new(Arc::clone(&transport_arc)));
         let (message_tx, message_rx) = mpsc::channel(100);
-        
+
         let client = Self {
-            transport: Arc::new(transport),
+            transport: transport_arc,
             state_machine,
-            channels,
+            channel_manager,
             message_tx,
             message_rx: Arc::new(RwLock::new(message_rx)),
             msg_serial: Arc::new(RwLock::new(0)),
@@ -105,20 +117,15 @@ impl RealtimeClient {
     }
     
     /// Get or create a channel
-    pub async fn channel(&self, name: impl Into<String>) -> RealtimeChannel {
+    pub async fn channel(&self, name: impl Into<String>) -> Arc<Channel> {
         let name = name.into();
-        let mut channels = self.channels.write().await;
-        
-        channels.entry(name.clone())
-            .or_insert_with(|| {
-                RealtimeChannel::new(
-                    name.clone(),
-                    self.transport.clone(),
-                    self.state_machine.clone(),
-                    self.msg_serial.clone(),
-                )
-            })
-            .clone()
+        self.channel_manager.get_or_create(&name).await
+    }
+
+    /// Get a channel with options
+    pub async fn channel_with_options(&self, name: impl Into<String>, options: ChannelOptions) -> Arc<Channel> {
+        let name = name.into();
+        self.channel_manager.get_or_create_with_options(&name, options).await
     }
     
     /// Get connection state
@@ -140,7 +147,7 @@ impl RealtimeClient {
     fn start_message_processor(&self) {
         let transport = self.transport.clone();
         let state_machine = self.state_machine.clone();
-        let channels = self.channels.clone();
+        let channel_manager = self.channel_manager.clone();
         
         tokio::spawn(async move {
             loop {
@@ -169,29 +176,10 @@ impl RealtimeClient {
                                     let _ = state_machine.send_event(ConnectionEvent::Error(error.clone())).await;
                                 }
                             }
-                            Action::Message => {
-                                // Route to appropriate channel
-                                if let Some(channel_name) = &message.channel {
-                                    let channels = channels.read().await;
-                                    if let Some(channel) = channels.get(channel_name) {
-                                        channel.handle_message(message).await;
-                                    }
-                                }
-                            }
-                            Action::Attached => {
-                                if let Some(channel_name) = &message.channel {
-                                    let channels = channels.read().await;
-                                    if let Some(channel) = channels.get(channel_name) {
-                                        channel.handle_attached().await;
-                                    }
-                                }
-                            }
-                            Action::Detached => {
-                                if let Some(channel_name) = &message.channel {
-                                    let channels = channels.read().await;
-                                    if let Some(channel) = channels.get(channel_name) {
-                                        channel.handle_detached().await;
-                                    }
+                            Action::Message | Action::Attached | Action::Detached | Action::Presence => {
+                                // Route to channel manager
+                                if let Some(_channel_name) = &message.channel {
+                                    let _ = channel_manager.handle_protocol_message(message.clone()).await;
                                 }
                             }
                             _ => {
