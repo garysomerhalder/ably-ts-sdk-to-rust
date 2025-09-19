@@ -30,9 +30,9 @@
 - [x] 🟢 INFRA-003: Implement connection pooling [COMPLETE - built into reqwest]
 - [x] 🟢 INFRA-004: Create error types and handling [COMPLETE - HttpError/AblyError]
 - [x] 🟢 INFRA-005: Implement API key authentication [COMPLETE - in HTTP client]
-- [ ] 🔴 INFRA-006: Implement JWT token authentication
-- [ ] 🔴 INFRA-007: Add token renewal mechanism
-- [ ] 🔴 INFRA-008: Create integration test harness
+- [x] 🟢 INFRA-006: Implement JWT token authentication [COMPLETE - JWT with HMAC-SHA256]
+- [x] 🟢 INFRA-007: Add token renewal mechanism [COMPLETE - TokenRenewalHandler]
+- [ ] 🟡 INFRA-008: Create integration test harness [IN_PROGRESS]
 
 ### Core (Week 5-8)
 - [ ] 🔴 CORE-001: Define ProtocolMessage structures
