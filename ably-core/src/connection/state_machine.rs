@@ -33,12 +33,21 @@ pub enum ConnectionEvent {
     Error(ErrorInfo),
     Suspend,
     Retry,
+    StateChanged { from: ConnectionState, to: ConnectionState },
+}
+
+/// Connection details
+#[derive(Debug, Clone, Default)]
+pub struct ConnectionDetails {
+    pub connection_id: Option<String>,
+    pub connection_key: Option<String>,
+    pub connection_serial: Option<i64>,
 }
 
 /// Connection state machine
 pub struct ConnectionStateMachine {
     state: Arc<RwLock<ConnectionState>>,
-    connection_id: Arc<RwLock<Option<String>>>,
+    connection_details: Arc<RwLock<ConnectionDetails>>,
     error_info: Arc<RwLock<Option<ErrorInfo>>>,
     state_history: Arc<RwLock<Vec<StateTransition>>>,
     event_tx: mpsc::UnboundedSender<ConnectionEvent>,
@@ -46,6 +55,8 @@ pub struct ConnectionStateMachine {
     listeners: Arc<RwLock<Vec<StateChangeListener>>>,
     retry_count: Arc<RwLock<u32>>,
     last_activity: Arc<RwLock<Instant>>,
+    state_change_tx: mpsc::UnboundedSender<ConnectionEvent>,
+    state_change_rx: Arc<RwLock<Option<mpsc::UnboundedReceiver<ConnectionEvent>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,10 +74,11 @@ impl ConnectionStateMachine {
     /// Create a new connection state machine
     pub fn new() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
-        
+        let (state_tx, state_rx) = mpsc::unbounded_channel();
+
         Self {
             state: Arc::new(RwLock::new(ConnectionState::Initialized)),
-            connection_id: Arc::new(RwLock::new(None)),
+            connection_details: Arc::new(RwLock::new(ConnectionDetails::default())),
             error_info: Arc::new(RwLock::new(None)),
             state_history: Arc::new(RwLock::new(Vec::new())),
             event_tx: tx,
@@ -74,6 +86,8 @@ impl ConnectionStateMachine {
             listeners: Arc::new(RwLock::new(Vec::new())),
             retry_count: Arc::new(RwLock::new(0)),
             last_activity: Arc::new(RwLock::new(Instant::now())),
+            state_change_tx: state_tx,
+            state_change_rx: Arc::new(RwLock::new(Some(state_rx))),
         }
     }
 
@@ -82,9 +96,19 @@ impl ConnectionStateMachine {
         *self.state.read().await
     }
 
+    /// Alias for state()
+    pub async fn current_state(&self) -> ConnectionState {
+        self.state().await
+    }
+
     /// Get connection ID
     pub async fn connection_id(&self) -> Option<String> {
-        self.connection_id.read().await.clone()
+        self.connection_details.read().await.connection_id.clone()
+    }
+
+    /// Get connection details
+    pub async fn connection_details(&self) -> ConnectionDetails {
+        self.connection_details.read().await.clone()
     }
 
     /// Get last error
@@ -109,7 +133,7 @@ impl ConnectionStateMachine {
             let new_state = self.handle_transition(current_state, &event).await;
             
             if new_state != current_state {
-                self.transition_to(new_state, event).await;
+                self.transition_to_internal(new_state, event).await;
             }
         }
     }
@@ -157,8 +181,8 @@ impl ConnectionStateMachine {
         }
     }
 
-    /// Perform state transition
-    async fn transition_to(&self, new_state: ConnectionState, event: ConnectionEvent) {
+    /// Perform state transition (internal)
+    async fn transition_to_internal(&self, new_state: ConnectionState, event: ConnectionEvent) {
         let current_state = *self.state.read().await;
         
         info!("State transition: {:?} -> {:?} (event: {:?})", current_state, new_state, event);
@@ -171,9 +195,9 @@ impl ConnectionStateMachine {
         // Handle event-specific updates
         match event {
             ConnectionEvent::Connected(ref id) => {
-                let mut conn_id = self.connection_id.write().await;
-                *conn_id = Some(id.clone());
-                
+                let mut details = self.connection_details.write().await;
+                details.connection_id = Some(id.clone());
+
                 let mut retry = self.retry_count.write().await;
                 *retry = 0;
             }
@@ -237,6 +261,17 @@ impl ConnectionStateMachine {
         }
     }
 
+    /// Record transition in history
+    async fn record_transition(&self, from: ConnectionState, to: ConnectionState) {
+        info!("Recording transition: {:?} -> {:?}", from, to);
+
+        // Send state change event
+        let _ = self.state_change_tx.send(ConnectionEvent::StateChanged {
+            from,
+            to,
+        });
+    }
+
     /// Get retry count
     pub async fn retry_count(&self) -> u32 {
         *self.retry_count.read().await
@@ -245,6 +280,160 @@ impl ConnectionStateMachine {
     /// Get time since last activity
     pub async fn idle_time(&self) -> Duration {
         self.last_activity.read().await.elapsed()
+    }
+
+    /// Handle a protocol message and update state accordingly
+    pub async fn handle_protocol_message(&mut self, msg: ProtocolMessage) -> AblyResult<()> {
+        match msg.action {
+            Action::Connected => {
+                // Clone the connection_id first to avoid move issues
+                let conn_id = msg.connection_id.clone().unwrap_or_else(|| "unknown".to_string());
+
+                // Update connection details
+                let mut details = self.connection_details.write().await;
+                details.connection_id = msg.connection_id;
+                details.connection_key = msg.connection_key;
+                details.connection_serial = msg.connection_serial;
+                drop(details);
+
+                let event = ConnectionEvent::Connected(conn_id);
+
+                self.send_event(event).await
+            }
+            Action::Disconnected => {
+                let event = ConnectionEvent::Disconnected(msg.error);
+                self.send_event(event).await
+            }
+            Action::Error => {
+                if let Some(error) = msg.error {
+                    let event = ConnectionEvent::Error(error);
+                    self.send_event(event).await
+                } else {
+                    Ok(())
+                }
+            }
+            Action::Closed => {
+                self.send_event(ConnectionEvent::Closed).await
+            }
+            _ => Ok(()), // Ignore other message types for state machine
+        }
+    }
+
+    /// Transition to a new state directly (for testing and manual control)
+    pub async fn transition_to(&mut self, new_state: ConnectionState) -> AblyResult<()> {
+        let current = self.state().await;
+
+        // Validate transition is allowed
+        if !self.is_valid_transition(current, new_state).await {
+            return Err(AblyError::invalid_request(
+                format!("Invalid transition from {:?} to {:?}", current, new_state)
+            ));
+        }
+
+        // Create appropriate event for the transition
+        let event = match new_state {
+            ConnectionState::Connecting => ConnectionEvent::Connect,
+            ConnectionState::Connected => ConnectionEvent::Connected("manual".to_string()),
+            ConnectionState::Disconnected => ConnectionEvent::Disconnect,
+            ConnectionState::Suspended => ConnectionEvent::Suspend,
+            ConnectionState::Closing => ConnectionEvent::Close,
+            ConnectionState::Closed => ConnectionEvent::Closed,
+            ConnectionState::Failed => ConnectionEvent::Error(ErrorInfo {
+                code: 50000,
+                message: Some("Manual failure".to_string()),
+                ..Default::default()
+            }),
+            _ => ConnectionEvent::Connect, // Default
+        };
+
+        // Update state
+        let mut state = self.state.write().await;
+        *state = new_state;
+        drop(state);
+
+        // Send state change event
+        let _ = self.state_change_tx.send(ConnectionEvent::StateChanged {
+            from: current,
+            to: new_state,
+        });
+
+        // Record the transition
+        self.record_transition(current, new_state).await;
+
+        Ok(())
+    }
+
+
+    /// Check if a state transition is valid
+    async fn is_valid_transition(&self, from: ConnectionState, to: ConnectionState) -> bool {
+        match (from, to) {
+            // From Initialized
+            (ConnectionState::Initialized, ConnectionState::Connecting) => true,
+            (ConnectionState::Initialized, ConnectionState::Failed) => true,
+
+            // From Connecting
+            (ConnectionState::Connecting, ConnectionState::Connected) => true,
+            (ConnectionState::Connecting, ConnectionState::Disconnected) => true,
+            (ConnectionState::Connecting, ConnectionState::Failed) => true,
+            (ConnectionState::Connecting, ConnectionState::Closing) => true,
+
+            // From Connected
+            (ConnectionState::Connected, ConnectionState::Disconnected) => true,
+            (ConnectionState::Connected, ConnectionState::Suspended) => true,
+            (ConnectionState::Connected, ConnectionState::Closing) => true,
+            (ConnectionState::Connected, ConnectionState::Failed) => true,
+
+            // From Disconnected
+            (ConnectionState::Disconnected, ConnectionState::Connecting) => true,
+            (ConnectionState::Disconnected, ConnectionState::Suspended) => true,
+            (ConnectionState::Disconnected, ConnectionState::Closing) => true,
+            (ConnectionState::Disconnected, ConnectionState::Failed) => true,
+
+            // From Suspended
+            (ConnectionState::Suspended, ConnectionState::Connecting) => true,
+            (ConnectionState::Suspended, ConnectionState::Disconnected) => true,
+            (ConnectionState::Suspended, ConnectionState::Closing) => true,
+            (ConnectionState::Suspended, ConnectionState::Failed) => true,
+
+            // From Closing
+            (ConnectionState::Closing, ConnectionState::Closed) => true,
+            (ConnectionState::Closing, ConnectionState::Failed) => true,
+
+            // From Failed
+            (ConnectionState::Failed, ConnectionState::Connecting) => true,
+
+            // From Closed
+            (ConnectionState::Closed, _) => false, // Terminal state
+
+            _ => false, // All other transitions are invalid
+        }
+    }
+
+    /// Check if we can retry from current state
+    pub async fn can_retry(&self) -> bool {
+        let state = self.state().await;
+        matches!(state, ConnectionState::Failed | ConnectionState::Disconnected | ConnectionState::Suspended)
+    }
+
+    /// Retry the connection
+    pub async fn retry_connection(&mut self) -> AblyResult<()> {
+        if !self.can_retry().await {
+            return Err(AblyError::invalid_request(
+                format!("Cannot retry from {:?} state", self.state().await)
+            ));
+        }
+
+        self.send_event(ConnectionEvent::Retry).await?;
+        self.transition_to(ConnectionState::Connecting).await
+    }
+
+    /// Subscribe to state change events
+    pub async fn subscribe_to_events(&mut self) -> mpsc::UnboundedReceiver<ConnectionEvent> {
+        let mut rx_guard = self.state_change_rx.write().await;
+        rx_guard.take().unwrap_or_else(|| {
+            let (tx, rx) = mpsc::unbounded_channel();
+            rx
+        })
     }
 
     /// Check if connection should be suspended
@@ -266,8 +455,8 @@ impl ConnectionStateMachine {
         let mut state = self.state.write().await;
         *state = ConnectionState::Initialized;
         
-        let mut conn_id = self.connection_id.write().await;
-        *conn_id = None;
+        let mut details = self.connection_details.write().await;
+        *details = ConnectionDetails::default();
         
         let mut error = self.error_info.write().await;
         *error = None;

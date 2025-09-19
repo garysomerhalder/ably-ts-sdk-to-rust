@@ -11,7 +11,7 @@
 |-------|-------|--------|----------|
 | 1. Foundation | 5 | 🟢 Complete | 5/5 (All FOUND tasks ✅) |
 | 2. Infrastructure | 8 | 🟢 Complete | 8/8 |
-| 3. Core | 12 | 🔴 Not Started | 0/12 |
+| 3. Core | 12 | 🟡 In Progress | 4/12 |
 | 4. Features | 10 | 🔴 Not Started | 0/10 |
 | 5. Bindings | 5 | 🔴 Not Started | 0/5 |
 
@@ -35,10 +35,10 @@
 - [x] 🟢 INFRA-008: Create integration test harness [COMPLETE - comprehensive test suite]
 
 ### Core (Week 5-8)
-- [ ] 🔴 CORE-001: Define ProtocolMessage structures
-- [ ] 🔴 CORE-002: Implement MessagePack serialization
-- [ ] 🔴 CORE-003: Implement JSON serialization
-- [ ] 🔴 CORE-004: Create WebSocket transport
+- [x] 🟢 CORE-001: Define ProtocolMessage structures [COMPLETE]
+- [x] 🟢 CORE-002: Implement MessagePack serialization [COMPLETE]
+- [x] 🟢 CORE-003: Implement JSON serialization [COMPLETE]
+- [x] 🟢 CORE-004: Create WebSocket transport [COMPLETE]
 - [ ] 🔴 CORE-005: Implement connection state machine
 - [ ] 🔴 CORE-006: Add heartbeat mechanism
 - [ ] 🔴 CORE-007: Implement channel attach/detach
@@ -69,10 +69,10 @@
 
 ## 📈 Progress Metrics
 - **Total Tasks**: 40
-- **Completed**: 13 (Foundation: 5, Infrastructure: 8)
+- **Completed**: 17 (Foundation: 5, Infrastructure: 8, Core: 4)
 - **In Progress**: 0
 - **Blocked**: 0
-- **Completion**: 32.5% (13/40)
+- **Completion**: 42.5% (17/40)
 
 ## 🔗 Dependencies
 - Ably API credentials required (store in /reference/)

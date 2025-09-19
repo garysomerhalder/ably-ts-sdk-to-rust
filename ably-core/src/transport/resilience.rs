@@ -304,14 +304,7 @@ fn calculate_backoff(retry_count: u32, base_delay: Duration, max_delay: Duration
     capped + Duration::from_millis(jitter)
 }
 
-// Extension trait for WebSocketTransport
-impl WebSocketTransport {
-    /// Send a heartbeat message
-    pub async fn send_heartbeat(&self) -> AblyResult<()> {
-        let heartbeat = crate::protocol::ProtocolMessage::heartbeat();
-        self.send_message(heartbeat).await
-    }
-}
+// Extension methods for WebSocketTransport are in mod.rs
 
 #[cfg(test)]
 mod tests {
