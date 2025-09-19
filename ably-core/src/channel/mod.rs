@@ -2,7 +2,7 @@
 // Handles channel attach/detach and state management
 
 use crate::error::{AblyError, AblyResult};
-use crate::protocol::{ProtocolMessage, Action, Message};
+use crate::protocol::{ProtocolMessage, Action, Message, ErrorInfo};
 use crate::transport::WebSocketTransport;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
@@ -48,15 +48,37 @@ pub struct CipherParams {
     pub algorithm: String,
 }
 
+/// Channel state information for recovery
+#[derive(Debug, Clone)]
+pub struct ChannelStateInfo {
+    pub state: ChannelState,
+    pub resume: Option<String>,
+    pub reason: Option<ErrorInfo>,
+    pub has_presence: bool,
+    pub has_backlog: bool,
+}
+
+/// State change event
+#[derive(Debug, Clone)]
+pub struct StateChangeEvent {
+    pub from: ChannelState,
+    pub to: ChannelState,
+    pub reason: Option<ErrorInfo>,
+}
+
 /// Channel implementation
 pub struct Channel {
     name: String,
     state: Arc<RwLock<ChannelState>>,
+    state_info: Arc<RwLock<ChannelStateInfo>>,
     options: ChannelOptions,
     transport: Arc<WebSocketTransport>,
     message_queue: Arc<RwLock<Vec<Message>>>,
     subscribers: Arc<RwLock<HashMap<String, Vec<mpsc::UnboundedSender<Message>>>>>,
     presence_map: Arc<RwLock<HashMap<String, PresenceMember>>>,
+    msg_serial: Arc<RwLock<i64>>,
+    attach_serial: Arc<RwLock<Option<String>>>,
+    state_listeners: Arc<RwLock<Vec<mpsc::UnboundedSender<StateChangeEvent>>>>,
 }
 
 /// Presence member information
@@ -86,14 +108,26 @@ impl Channel {
 
     /// Create a channel with options
     pub fn with_options(name: String, transport: Arc<WebSocketTransport>, options: ChannelOptions) -> Self {
+        let state_info = ChannelStateInfo {
+            state: ChannelState::Initialized,
+            resume: None,
+            reason: None,
+            has_presence: false,
+            has_backlog: false,
+        };
+
         Self {
             name,
             state: Arc::new(RwLock::new(ChannelState::Initialized)),
+            state_info: Arc::new(RwLock::new(state_info)),
             options,
             transport,
             message_queue: Arc::new(RwLock::new(Vec::new())),
             subscribers: Arc::new(RwLock::new(HashMap::new())),
             presence_map: Arc::new(RwLock::new(HashMap::new())),
+            msg_serial: Arc::new(RwLock::new(0)),
+            attach_serial: Arc::new(RwLock::new(None)),
+            state_listeners: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -107,13 +141,157 @@ impl Channel {
         *self.state.read().await
     }
 
+    /// Get detailed state information
+    pub async fn state_info(&self) -> ChannelStateInfo {
+        self.state_info.read().await.clone()
+    }
+
+    /// Update channel state with info
+    async fn update_state(&self, new_state: ChannelState, reason: Option<ErrorInfo>) {
+        let mut state = self.state.write().await;
+        let mut state_info = self.state_info.write().await;
+
+        let old_state = *state;
+        *state = new_state;
+        state_info.state = new_state;
+        state_info.reason = reason.clone();
+
+        drop(state);
+        drop(state_info);
+
+        // Notify state change listeners
+        let listeners = self.state_listeners.read().await;
+        let event = StateChangeEvent {
+            from: old_state,
+            to: new_state,
+            reason,
+        };
+
+        for listener in listeners.iter() {
+            let _ = listener.send(event.clone());
+        }
+
+        info!("Channel {} state transition: {:?} -> {:?}", self.name, old_state, new_state);
+    }
+
+    /// Subscribe to state changes
+    pub async fn on_state_change(&self) -> mpsc::UnboundedReceiver<StateChangeEvent> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let mut listeners = self.state_listeners.write().await;
+        listeners.push(tx);
+        rx
+    }
+
+    /// Get message serial
+    pub async fn get_msg_serial(&self) -> i64 {
+        *self.msg_serial.read().await
+    }
+
+    /// Get attach serial
+    pub async fn get_attach_serial(&self) -> Option<String> {
+        self.attach_serial.read().await.clone()
+    }
+
+    /// Get queue size
+    pub async fn get_queue_size(&self) -> usize {
+        self.message_queue.read().await.len()
+    }
+
+    /// Handle error
+    pub async fn handle_error(&self, error: ErrorInfo) {
+        self.update_state(ChannelState::Failed, Some(error)).await;
+    }
+
+    /// Recover from failed state
+    pub async fn recover(&self) -> AblyResult<()> {
+        if self.state().await != ChannelState::Failed {
+            return Err(AblyError::invalid_request("Channel is not in failed state"));
+        }
+
+        info!("Recovering channel {} from failed state", self.name);
+        self.attach().await
+    }
+
+    /// Suspend channel
+    pub async fn suspend(&self) -> AblyResult<()> {
+        self.update_state(ChannelState::Suspended, None).await;
+        Ok(())
+    }
+
+    /// Resume channel with serial
+    pub async fn resume(&self, serial: Option<String>) -> AblyResult<()> {
+        if let Some(s) = serial {
+            let mut attach_serial = self.attach_serial.write().await;
+            *attach_serial = Some(s);
+        }
+        self.attach().await
+    }
+
+    /// Enter presence
+    pub async fn presence_enter(&self, data: Option<serde_json::Value>) -> AblyResult<()> {
+        // Auto-attach if not attached
+        if self.state().await != ChannelState::Attached {
+            self.attach().await?;
+        }
+
+        // Update state info
+        let mut state_info = self.state_info.write().await;
+        state_info.has_presence = true;
+        drop(state_info);
+
+        // Send presence enter message
+        let presence_msg = crate::protocol::PresenceMessage {
+            action: Some(crate::protocol::PresenceAction::Enter),
+            client_id: Some("rust-client".to_string()),
+            data,
+            ..Default::default()
+        };
+
+        let msg = ProtocolMessage {
+            action: Action::Presence,
+            channel: Some(self.name.clone()),
+            presence: Some(vec![presence_msg]),
+            ..Default::default()
+        };
+
+        self.transport.send_message(msg).await?;
+        Ok(())
+    }
+
+    /// Leave presence
+    pub async fn presence_leave(&self) -> AblyResult<()> {
+        // Send presence leave message
+        let presence_msg = crate::protocol::PresenceMessage {
+            action: Some(crate::protocol::PresenceAction::Leave),
+            client_id: Some("rust-client".to_string()),
+            ..Default::default()
+        };
+
+        let msg = ProtocolMessage {
+            action: Action::Presence,
+            channel: Some(self.name.clone()),
+            presence: Some(vec![presence_msg]),
+            ..Default::default()
+        };
+
+        self.transport.send_message(msg).await?;
+
+        // Update state info
+        let mut state_info = self.state_info.write().await;
+        state_info.has_presence = false;
+
+        Ok(())
+    }
+
     /// Attach to the channel with retry logic
     pub async fn attach(&self) -> AblyResult<()> {
         // Validate channel name
         if self.name.is_empty() {
-            let mut state = self.state.write().await;
-            *state = ChannelState::Failed;
-            drop(state);
+            self.update_state(ChannelState::Failed, Some(ErrorInfo {
+                code: 40003,
+                message: Some("Channel name cannot be empty".to_string()),
+                ..Default::default()
+            })).await;
             return Err(AblyError::invalid_request("Channel name cannot be empty"));
         }
 
@@ -142,9 +320,7 @@ impl Channel {
             attempt += 1;
 
             // Update state to Attaching
-            let mut state = self.state.write().await;
-            *state = ChannelState::Attaching;
-            drop(state);
+            self.update_state(ChannelState::Attaching, None).await;
 
             info!("Attaching to channel: {} (attempt {}/{})", self.name, attempt, max_retries);
 
@@ -179,9 +355,17 @@ impl Channel {
         }
 
         // All retries exhausted, set to failed state
-        let mut state = self.state.write().await;
-        *state = ChannelState::Failed;
-        drop(state);
+        self.update_state(ChannelState::Failed, last_error.as_ref().and_then(|e| {
+            if let AblyError::Api { code, message } = e {
+                Some(ErrorInfo {
+                    code: *code,
+                    message: Some(message.clone()),
+                    ..Default::default()
+                })
+            } else {
+                None
+            }
+        })).await;
 
         error!("Failed to attach to channel {} after {} attempts", self.name, max_retries);
         Err(last_error.unwrap_or_else(|| AblyError::channel_failed(format!(
@@ -201,17 +385,14 @@ impl Channel {
                 return Ok(());
             }
             ChannelState::Failed => {
-                let mut state = self.state.write().await;
-                *state = ChannelState::Detached;
+                self.update_state(ChannelState::Detached, None).await;
                 return Ok(());
             }
             _ => {}
         }
 
         // Update state to Detaching
-        let mut state = self.state.write().await;
-        *state = ChannelState::Detaching;
-        drop(state);
+        self.update_state(ChannelState::Detaching, None).await;
 
         info!("Detaching from channel: {}", self.name);
 
@@ -233,6 +414,12 @@ impl Channel {
         if self.state().await != ChannelState::Attached {
             self.attach().await?;
         }
+
+        // Increment message serial
+        let mut serial = self.msg_serial.write().await;
+        *serial += 1;
+        let msg_serial = *serial;
+        drop(serial);
 
         let message = Message {
             name: Some(name.to_string()),
@@ -294,13 +481,33 @@ impl Channel {
     pub async fn handle_protocol_message(&self, msg: ProtocolMessage) -> AblyResult<()> {
         match msg.action {
             Action::Attached => {
-                let mut state = self.state.write().await;
-                *state = ChannelState::Attached;
+                self.update_state(ChannelState::Attached, None).await;
+
+                // Store attach serial if present
+                if let Some(serial) = msg.channel_serial.clone() {
+                    let mut attach_serial = self.attach_serial.write().await;
+                    *attach_serial = Some(serial);
+                }
+
+                // Update state info flags if present
+                if let Some(flags) = msg.flags {
+                    let mut state_info = self.state_info.write().await;
+                    state_info.has_presence = flags & crate::protocol::flags::HAS_PRESENCE != 0;
+                    state_info.has_backlog = flags & crate::protocol::flags::HAS_BACKLOG != 0;
+                    state_info.resume = msg.channel_serial;
+                }
+
                 info!("Channel {} attached", self.name);
             }
             Action::Detached => {
-                let mut state = self.state.write().await;
-                *state = ChannelState::Detached;
+                self.update_state(ChannelState::Detached, msg.error).await;
+
+                // Clear state on detach
+                let mut state_info = self.state_info.write().await;
+                state_info.has_presence = false;
+                state_info.has_backlog = false;
+                state_info.resume = None;
+
                 info!("Channel {} detached", self.name);
             }
             Action::Message => {
@@ -314,9 +521,8 @@ impl Channel {
                 }
             }
             Action::Error => {
-                let mut state = self.state.write().await;
-                *state = ChannelState::Failed;
-                error!("Channel {} error: {:?}", self.name, msg.error);
+                self.update_state(ChannelState::Failed, msg.error).await;
+                error!("Channel {} error", self.name);
             }
             _ => {}
         }
@@ -352,6 +558,12 @@ impl Channel {
             queue.push(message);
             if queue.len() > 1000 {
                 queue.drain(0..500);
+            }
+
+            // Update backlog flag if queue has messages
+            if queue.len() > 0 {
+                let mut state_info = self.state_info.write().await;
+                state_info.has_backlog = true;
             }
         }
 
