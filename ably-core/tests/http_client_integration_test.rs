@@ -23,7 +23,7 @@ struct TestMessage {
 async fn test_get_server_time() {
     let client = AblyHttpClient::new(ABLY_API_KEY);
 
-    let result: Result<ServerTimeResponse, HttpError> = client.get("/time").await;
+    let result: Result<ServerTimeResponse, HttpError> = client.get_json("/time").await;
 
     assert!(result.is_ok(), "Failed to get server time: {:?}", result.err());
     let response = result.unwrap();
@@ -36,7 +36,7 @@ async fn test_authentication_headers() {
     let client = AblyHttpClient::new(ABLY_API_KEY);
 
     // Test with an endpoint that requires authentication
-    let result: Result<serde_json::Value, HttpError> = client.get("/keys/BGkZHw.WUtzEQ").await;
+    let result: Result<serde_json::Value, HttpError> = client.get_json("/keys/BGkZHw.WUtzEQ").await;
 
     // Should not get 401 Unauthorized if auth headers are correct
     match result {
@@ -58,7 +58,7 @@ async fn test_post_json_message() {
     };
 
     let result: Result<serde_json::Value, HttpError> =
-        client.post("/channels/test-channel/messages", &message).await;
+        client.post_json("/channels/test-channel/messages", &message).await;
 
     assert!(result.is_ok(), "Failed to post message: {:?}", result.err());
 }
@@ -69,7 +69,7 @@ async fn test_connection_timeout() {
     let client = AblyHttpClient::with_timeout(ABLY_API_KEY, std::time::Duration::from_millis(1));
 
     // This should timeout with such a short duration
-    let result: Result<ServerTimeResponse, HttpError> = client.get("/time").await;
+    let result: Result<ServerTimeResponse, HttpError> = client.get_json("/time").await;
 
     match result {
         Err(HttpError::Timeout(_)) => {} // Expected
@@ -84,7 +84,7 @@ async fn test_invalid_endpoint() {
     let client = AblyHttpClient::new(ABLY_API_KEY);
 
     let result: Result<serde_json::Value, HttpError> =
-        client.get("/this/endpoint/does/not/exist").await;
+        client.get_json("/this/endpoint/does/not/exist").await;
 
     assert!(result.is_err(), "Should fail for invalid endpoint");
 
@@ -104,7 +104,7 @@ async fn test_rate_limiting_handling() {
     // Make many rapid requests to potentially trigger rate limiting
     let mut results = Vec::new();
     for _ in 0..100 {
-        let result: Result<ServerTimeResponse, HttpError> = client.get("/time").await;
+        let result: Result<ServerTimeResponse, HttpError> = client.get_json("/time").await;
         results.push(result);
     }
 
@@ -127,7 +127,7 @@ async fn test_api_key_encoding() {
     let client = AblyHttpClient::new(ABLY_API_KEY);
 
     // This will fail if the auth header is not properly formatted
-    let result: Result<ServerTimeResponse, HttpError> = client.get("/time").await;
+    let result: Result<ServerTimeResponse, HttpError> = client.get_json("/time").await;
     assert!(result.is_ok(), "API key not properly encoded");
 }
 
@@ -137,6 +137,6 @@ async fn test_user_agent_header() {
     let client = AblyHttpClient::new(ABLY_API_KEY);
 
     // Ably API should accept our User-Agent
-    let result: Result<ServerTimeResponse, HttpError> = client.get("/time").await;
+    let result: Result<ServerTimeResponse, HttpError> = client.get_json("/time").await;
     assert!(result.is_ok(), "User-Agent header may be missing or invalid");
 }

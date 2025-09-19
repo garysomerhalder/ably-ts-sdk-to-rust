@@ -7,12 +7,45 @@ use reqwest::{Client, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::time::Duration;
+use thiserror::Error;
 
 pub use self::config::HttpConfig;
 pub use self::resilience::{CircuitBreaker, RateLimiter, ConnectionMetrics};
 
 mod config;
 mod resilience;
+
+/// HTTP-specific errors for integration tests
+#[derive(Error, Debug)]
+pub enum HttpError {
+    #[error("Request timeout: {0}")]
+    Timeout(String),
+
+    #[error("Authentication failed: status {status}")]
+    AuthenticationFailed { status: u16 },
+
+    #[error("Rate limited: retry after {retry_after:?} seconds")]
+    RateLimited { retry_after: Option<u64> },
+
+    #[error("Not found: {message}")]
+    NotFound { message: String },
+
+    #[error("Server error: {status} - {message}")]
+    ServerError { status: u16, message: String },
+
+    #[error("Network error: {0}")]
+    Network(String),
+}
+
+impl From<reqwest::Error> for HttpError {
+    fn from(err: reqwest::Error) -> Self {
+        if err.is_timeout() {
+            HttpError::Timeout(err.to_string())
+        } else {
+            HttpError::Network(err.to_string())
+        }
+    }
+}
 
 /// HTTP methods supported by Ably REST API
 #[derive(Debug, Clone, Copy)]
@@ -30,11 +63,48 @@ pub struct AblyHttpClient {
     auth_mode: Option<AuthMode>,
     base_url: String,
     default_headers: Vec<(String, String)>,
+    timeout: Duration,
 }
 
 impl AblyHttpClient {
+    /// Create new HTTP client with API key for integration tests
+    pub fn new(api_key: &str) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .user_agent("ably-rust-sdk/0.1.0")
+            .build()
+            .expect("Failed to build HTTP client");
+
+        Self {
+            client,
+            auth_mode: Some(AuthMode::ApiKey(api_key.to_string())),
+            base_url: "https://rest.ably.io".to_string(),
+            default_headers: Vec::new(),
+            timeout: Duration::from_secs(30),
+        }
+    }
+
+    /// Create new HTTP client with custom timeout
+    pub fn with_timeout(api_key: &str, timeout: Duration) -> Self {
+        let client = Client::builder()
+            .timeout(timeout)
+            .connect_timeout(Duration::from_secs(10))
+            .user_agent("ably-rust-sdk/0.1.0")
+            .build()
+            .expect("Failed to build HTTP client");
+
+        Self {
+            client,
+            auth_mode: Some(AuthMode::ApiKey(api_key.to_string())),
+            base_url: "https://rest.ably.io".to_string(),
+            default_headers: Vec::new(),
+            timeout,
+        }
+    }
+
     /// Create new HTTP client with default configuration
-    pub fn new(config: HttpConfig) -> Self {
+    pub fn from_config(config: HttpConfig) -> Self {
         let client = Client::builder()
             .timeout(config.timeout)
             .connect_timeout(config.connect_timeout)
@@ -48,12 +118,13 @@ impl AblyHttpClient {
             auth_mode: None,
             base_url: config.base_url.clone(),
             default_headers: Vec::new(),
+            timeout: config.timeout,
         }
     }
 
     /// Create new HTTP client with authentication
     pub fn with_auth(config: HttpConfig, auth_mode: AuthMode) -> Self {
-        let mut client = Self::new(config);
+        let mut client = Self::from_config(config);
         client.auth_mode = Some(auth_mode);
         client
     }
@@ -86,6 +157,89 @@ impl AblyHttpClient {
             format!("{}{}", self.base_url, url)
         };
         HttpRequestBuilder::new(self, HttpMethod::Post, &full_url)
+    }
+
+    /// Simplified async GET method for integration tests
+    pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, HttpError> {
+        let full_url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}{}", self.base_url, path)
+        };
+
+        let mut request = self.client.get(&full_url);
+        request = self.apply_auth(request);
+        request = request.header("User-Agent", "ably-rust-sdk/0.1.0");
+
+        let response = request.send().await?;
+        let status = response.status();
+
+        if status == 401 {
+            return Err(HttpError::AuthenticationFailed { status: status.as_u16() });
+        } else if status == 404 {
+            return Err(HttpError::NotFound {
+                message: response.text().await.unwrap_or_else(|_| "Not found".to_string())
+            });
+        } else if status == 429 {
+            let retry_after = response.headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse().ok());
+            return Err(HttpError::RateLimited { retry_after });
+        } else if !status.is_success() {
+            return Err(HttpError::ServerError {
+                status: status.as_u16(),
+                message: response.text().await.unwrap_or_else(|_| "Unknown error".to_string()),
+            });
+        }
+
+        response.json::<T>().await
+            .map_err(|e| HttpError::Network(format!("Failed to parse JSON: {}", e)))
+    }
+
+    /// Simplified async POST method for integration tests
+    pub async fn post_json<S: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &S
+    ) -> Result<T, HttpError> {
+        let full_url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}{}", self.base_url, path)
+        };
+
+        let mut request = self.client.post(&full_url);
+        request = self.apply_auth(request);
+        request = request
+            .header("User-Agent", "ably-rust-sdk/0.1.0")
+            .header("Content-Type", "application/json")
+            .json(body);
+
+        let response = request.send().await?;
+        let status = response.status();
+
+        if status == 401 {
+            return Err(HttpError::AuthenticationFailed { status: status.as_u16() });
+        } else if status == 404 {
+            return Err(HttpError::NotFound {
+                message: response.text().await.unwrap_or_else(|_| "Not found".to_string())
+            });
+        } else if status == 429 {
+            let retry_after = response.headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse().ok());
+            return Err(HttpError::RateLimited { retry_after });
+        } else if !status.is_success() {
+            return Err(HttpError::ServerError {
+                status: status.as_u16(),
+                message: response.text().await.unwrap_or_else(|_| "Unknown error".to_string()),
+            });
+        }
+
+        response.json::<T>().await
+            .map_err(|e| HttpError::Network(format!("Failed to parse JSON: {}", e)))
     }
 
     /// Create a PUT request builder
