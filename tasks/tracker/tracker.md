@@ -41,7 +41,7 @@
 - [x] 🟢 CORE-004: Create WebSocket transport [COMPLETE]
 - [x] 🟢 CORE-005: Implement connection state machine [COMPLETE]
 - [x] 🟢 CORE-006: Add heartbeat mechanism [COMPLETE]
-- [ ] 🔴 CORE-007: Implement channel attach/detach
+- [x] 🟢 CORE-007: Implement channel attach/detach
 - [ ] 🔴 CORE-008: Create channel state management
 - [ ] 🔴 CORE-009: Implement message publishing
 - [ ] 🔴 CORE-010: Add presence protocol
@@ -69,10 +69,10 @@
 
 ## 📈 Progress Metrics
 - **Total Tasks**: 40
-- **Completed**: 19 (Foundation: 5, Infrastructure: 8, Core: 6)
+- **Completed**: 20 (Foundation: 5, Infrastructure: 8, Core: 7)
 - **In Progress**: 0
 - **Blocked**: 0
-- **Completion**: 47.5% (19/40)
+- **Completion**: 50.0% (20/40)
 
 ## 🔗 Dependencies
 - Ably API credentials required (store in /reference/)
