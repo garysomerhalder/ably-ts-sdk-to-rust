@@ -3,11 +3,15 @@
 
 use crate::auth::AuthMode;
 use crate::error::{AblyError, AblyResult};
+use crate::retry::{RetryPolicy, RetryableError};
 use reqwest::{Client, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use thiserror::Error;
+use uuid::Uuid;
+use tracing::{debug, info, warn, error, instrument};
 
 pub use self::config::HttpConfig;
 pub use self::resilience::{CircuitBreaker, RateLimiter, ConnectionMetrics};
@@ -57,13 +61,17 @@ pub enum HttpMethod {
     Patch,
 }
 
-/// Ably HTTP client for REST API operations
+/// Ably HTTP client for REST API operations with production resilience
 pub struct AblyHttpClient {
     client: Client,
     auth_mode: Option<AuthMode>,
     base_url: String,
     default_headers: Vec<(String, String)>,
     timeout: Duration,
+    retry_policy: RetryPolicy,
+    circuit_breaker: Option<Arc<CircuitBreaker>>,
+    rate_limiter: Option<Arc<RateLimiter>>,
+    metrics: Arc<ConnectionMetrics>,
 }
 
 impl AblyHttpClient {
@@ -82,6 +90,10 @@ impl AblyHttpClient {
             base_url: "https://rest.ably.io".to_string(),
             default_headers: Vec::new(),
             timeout: Duration::from_secs(30),
+            retry_policy: RetryPolicy::default(),
+            circuit_breaker: Some(Arc::new(CircuitBreaker::new(5, Duration::from_secs(60)))),
+            rate_limiter: Some(Arc::new(RateLimiter::new(100, Duration::from_secs(1)))),
+            metrics: Arc::new(ConnectionMetrics::default()),
         }
     }
 
@@ -100,6 +112,10 @@ impl AblyHttpClient {
             base_url: "https://rest.ably.io".to_string(),
             default_headers: Vec::new(),
             timeout,
+            retry_policy: RetryPolicy::default(),
+            circuit_breaker: Some(Arc::new(CircuitBreaker::new(5, Duration::from_secs(60)))),
+            rate_limiter: Some(Arc::new(RateLimiter::new(100, Duration::from_secs(1)))),
+            metrics: Arc::new(ConnectionMetrics::default()),
         }
     }
 
@@ -119,6 +135,10 @@ impl AblyHttpClient {
             base_url: config.base_url.clone(),
             default_headers: Vec::new(),
             timeout: config.timeout,
+            retry_policy: RetryPolicy::default(),
+            circuit_breaker: Some(Arc::new(CircuitBreaker::new(5, Duration::from_secs(60)))),
+            rate_limiter: Some(Arc::new(RateLimiter::new(100, Duration::from_secs(1)))),
+            metrics: Arc::new(ConnectionMetrics::default()),
         }
     }
 
@@ -240,6 +260,26 @@ impl AblyHttpClient {
 
         response.json::<T>().await
             .map_err(|e| HttpError::Network(format!("Failed to parse JSON: {}", e)))
+    }
+
+    /// Get metrics for monitoring
+    pub fn metrics(&self) -> &ConnectionMetrics {
+        &self.metrics
+    }
+
+    /// Configure retry policy
+    pub fn set_retry_policy(&mut self, policy: RetryPolicy) {
+        self.retry_policy = policy;
+    }
+
+    /// Configure circuit breaker
+    pub fn set_circuit_breaker(&mut self, circuit_breaker: Option<Arc<CircuitBreaker>>) {
+        self.circuit_breaker = circuit_breaker;
+    }
+
+    /// Configure rate limiter
+    pub fn set_rate_limiter(&mut self, rate_limiter: Option<Arc<RateLimiter>>) {
+        self.rate_limiter = rate_limiter;
     }
 
     /// Create a PUT request builder
