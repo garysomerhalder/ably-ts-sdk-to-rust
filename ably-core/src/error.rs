@@ -79,6 +79,12 @@ pub enum AblyError {
     BadRequest {
         message: String,
     },
+
+    #[error("Encoding error: {encoding} - {message}")]
+    EncodingError {
+        encoding: String,
+        message: String,
+    },
 }
 
 impl AblyError {
@@ -228,7 +234,8 @@ impl AblyError {
             AblyError::Forbidden { message } |
             AblyError::NotFound { message } |
             AblyError::Internal { message } |
-            AblyError::BadRequest { message } => message.clone(),
+            AblyError::BadRequest { message } |
+            AblyError::EncodingError { message, .. } => message.clone(),
         }
     }
     

@@ -3,6 +3,7 @@
 
 pub mod messages;
 pub mod encoding;
+pub mod messagepack;
 
 // Re-export key types
 pub use messages::{
@@ -10,4 +11,8 @@ pub use messages::{
     ErrorInfo, AuthDetails, ConnectionDetails, flags,
     MessageFlags, ChannelDetails, ChannelStatus, ChannelOccupancy,
     ChannelMetrics, MessageData
+};
+
+pub use messagepack::{
+    MessagePackEncoder, MessagePackDecoder, MessagePackExt
 };
