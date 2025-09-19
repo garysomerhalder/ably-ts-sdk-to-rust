@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod jwt;
+pub use jwt::{JwtAuth, TokenRenewalHandler};
+
 /// Authentication modes supported by Ably
 #[derive(Debug, Clone)]
 pub enum AuthMode {

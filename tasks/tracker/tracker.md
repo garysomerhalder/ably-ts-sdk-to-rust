@@ -10,7 +10,7 @@
 | Phase | Tasks | Status | Progress |
 |-------|-------|--------|----------|
 | 1. Foundation | 5 | 🟢 Complete | 5/5 (All FOUND tasks ✅) |
-| 2. Infrastructure | 8 | 🔴 Not Started | 0/8 |
+| 2. Infrastructure | 8 | 🟡 In Progress | 5/8 |
 | 3. Core | 12 | 🔴 Not Started | 0/12 |
 | 4. Features | 10 | 🔴 Not Started | 0/10 |
 | 5. Bindings | 5 | 🔴 Not Started | 0/5 |
@@ -25,11 +25,11 @@
 - [x] 🟢 FOUND-005: Set up logging and tracing [COMPLETE]
 
 ### Infrastructure (Week 3-4)
-- [ ] 🟡 INFRA-001: Implement HTTP client with reqwest [IN_PROGRESS - Started: 2025-09-19]
-- [ ] 🔴 INFRA-002: Add retry logic with exponential backoff
-- [ ] 🔴 INFRA-003: Implement connection pooling
-- [ ] 🔴 INFRA-004: Create error types and handling
-- [ ] 🔴 INFRA-005: Implement API key authentication
+- [x] 🟢 INFRA-001: Implement HTTP client with reqwest [COMPLETE - 2025-09-19]
+- [x] 🟢 INFRA-002: Add retry logic with exponential backoff [COMPLETE - part of INFRA-001]
+- [x] 🟢 INFRA-003: Implement connection pooling [COMPLETE - built into reqwest]
+- [x] 🟢 INFRA-004: Create error types and handling [COMPLETE - HttpError/AblyError]
+- [x] 🟢 INFRA-005: Implement API key authentication [COMPLETE - in HTTP client]
 - [ ] 🔴 INFRA-006: Implement JWT token authentication
 - [ ] 🔴 INFRA-007: Add token renewal mechanism
 - [ ] 🔴 INFRA-008: Create integration test harness
@@ -69,10 +69,10 @@
 
 ## 📈 Progress Metrics
 - **Total Tasks**: 40
-- **Completed**: 5 (All Foundation tasks complete)
-- **In Progress**: 1
-- **Blocked**: 0  
-- **Completion**: 12.5% (5/40)
+- **Completed**: 10 (Foundation: 5, Infrastructure: 5)
+- **In Progress**: 3 (Infrastructure remaining)
+- **Blocked**: 0
+- **Completion**: 25% (10/40)
 
 ## 🔗 Dependencies
 - Ably API credentials required (store in /reference/)

@@ -282,6 +282,11 @@ impl AblyHttpClient {
         self.rate_limiter = rate_limiter;
     }
 
+    /// Set authentication mode
+    pub fn set_auth_mode(&mut self, auth_mode: AuthMode) {
+        self.auth_mode = Some(auth_mode);
+    }
+
     /// Create a PUT request builder
     pub fn put(&self, url: &str) -> HttpRequestBuilder {
         let full_url = if url.starts_with("http") {

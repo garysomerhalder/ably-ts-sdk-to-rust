@@ -26,6 +26,8 @@ aes = { workspace = true }
 cbc = { workspace = true }
 urlencoding = { workspace = true }
 chrono = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -43,6 +43,8 @@ aes-gcm = "0.10"
 aes = "0.8"
 cbc = "0.1"
 rand = "0.8"
+hmac = "0.12"
+sha2 = "0.10"
 
 # Development dependencies
 [workspace.dev-dependencies]
